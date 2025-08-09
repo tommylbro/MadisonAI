@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // This rule allows any authenticated user to read and write to the public data collection
+    // which is used for the chat messages (if you still have public messages).
+    // If you've moved all messages to user-specific conversations, this rule might not be strictly needed.
+    match /artifacts/{appId}/public/data/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // This NEW rule allows an authenticated user to read and write to their own private conversations
+    // and the messages within those conversations.
+    match /artifacts/{appId}/users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

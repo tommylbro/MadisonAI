@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "167580287666",
+    "project_id": "ai-chatbot-88602",
+    "storage_bucket": "ai-chatbot-88602.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:167580287666:android:b057a4176a46729ad47fab",
+        "android_client_info": {
+          "package_name": "com.tomssoftwareandgamedev.mobileai"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAGcu2yhTp8ZMbATlKc1zl7daXHtFyzGQI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
