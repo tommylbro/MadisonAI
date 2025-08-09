@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MadisonAI (Local)</title>
+    <!-- Tailwind CSS CDN for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React and ReactDOM CDNs -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <style>
+        /* Custom CSS for a better aesthetic and loading animation */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .dot-flashing {
+            position: relative;
+            width: 5px;
+            height: 5px;
+            border-radius: 5px;
+            background-color: #efefef;
+            color: #efefef;
+            animation: dotFlashing 1s infinite linear alternate;
+            animation-delay: .5s;
+        }
+        .dot-flashing::before, .dot-flashing::after {
+            content: '';
+            display: inline-block;
+            position: absolute;
+            top: 0;
+        }
+        .dot-flashing::before {
+            left: -10px;
+            width: 5px;
+            height: 5px;
+            border-radius: 5px;
+            background-color: #efefef;
+            color: #efefef;
+            animation: dotFlashing 1s infinite alternate;
+        }
+        .dot-flashing::after {
+            left: 10px;
+            width: 5px;
+            height: 5px;
+            border-radius: 5px;
+            background-color: #efefef;
+            color: #efefef;
+            animation: dotFlashing 1s infinite alternate;
+            animation-delay: 1s;
+        }
+        @keyframes dotFlashing {
+            0% { background-color: #efefef; }
+            50%, 100% { background-color: #9e9e9e; }
+        }
+        /* Style the scrollbar */
+        .overflow-y-auto::-webkit-scrollbar {
+            width: 8px;
+        }
+        .overflow-y-auto::-webkit-scrollbar-thumb {
+            background-color: #64748b;
+            border-radius: 10px;
+        }
+        .overflow-y-auto::-webkit-scrollbar-track {
+            background-color: #334155;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body class="bg-slate-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Custom function to generate a unique ID
+        const generateId = () => Date.now() + Math.random();
+
+        // Custom Icon component using inline SVG
+        const CustomIcon = ({ name, size = 20, className = '', path = '' }) => {
+            const icons = {
+                Send: (
+                    <path d="m22 2-7 20-4-9-9-4 20-7Z"/><path d="M22 2 11 13"/>
+                ),
+                Bot: (
+                    <path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>
+                ),
+                Volume2: (
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                ),
+                Image: (
+                    <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+                ),
+                XCircle: (
+                    <circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>
+                ),
+                Wand: (
+                    <path d="M15 4V2"/><path d="M15 12V4"/><path d="M15 20V12"/><path d="M15 22V20"/><path d="M22 10V8"/><path d="M22 18V10"/><path d="M22 22V18"/><path d="M12 11V9"/><path d="M12 17V11"/><path d="M12 19V17"/><path d="M2 13V11"/><path d="M2 17V13"/><path d="M2 19V17"/><path d="m19 5-2.22 2.22"/><path d="m12.44 9.56-2.22 2.22"/><path d="m5 15-2.22 2.22"/><path d="M15 15l2.22 2.22"/><path d="m9.56 12.44 2.22 2.22"/><path d="m17.22 5 2.22 2.22"/><path d="m17.22 12.78 2.22 2.22"/><path d="M5 11l-2.22 2.22"/><path d="m10.44 10.44-2.22 2.22"/><path d="m10.44 17.56-2.22 2.22"/><path d="M9 5l-2.22 2.22"/><path d="m4.56 9.56-2.22 2.22"/><path d="m7.78 12.78-2.22 2.22"/><path d="m7.78 17.22-2.22 2.22"/>
+                ),
+                Download: (
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>
+                )
+            };
+            return (
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width={size}
+                    height={size}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={className}
+                >
+                    {icons[name]}
+                </svg>
+            );
+        };
+
+        // Main App component
+        function App() {
+            // State for managing chat messages, user input, and UI flags.
+            const [messages, setMessages] = useState([]);
+            const [input, setInput] = useState('');
+            const [isAIGenerating, setIsAIGenerating] = useState(false);
+            const [isImageGenerating, setIsImageGenerating] = useState(false);
+            const [isSpeaking, setIsSpeaking] = useState(false);
+            const [imageFile, setImageFile] = useState(null);
+            const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
+            const [error, setError] = useState(null);
+            
+            const messagesEndRef = useRef(null);
+
+            // TODO: REPLACE WITH YOUR GOOGLE AI STUDIO API KEY
+            // To get an API key, visit: https://aistudio.google.com/app/apikey
+            const API_KEY = "AIzaSyCBBfnCqQlfrOCmSPzNuyC8F4jT0OHUX7g"; // <-- PASTE YOUR API KEY HERE
+
+            const userId = 'local-user'; // Fixed user ID for local mode
+
+            // Function to handle the text-to-speech functionality
+            const handleTextToSpeech = async (text) => {
+                if (isSpeaking) return;
+                setIsSpeaking(true);
+                try {
+                    const payload = {
+                        contents: [{ parts: [{ text: text }] }],
+                        generationConfig: {
+                            responseModalities: ["AUDIO"],
+                            speechConfig: {
+                                voiceConfig: {
+                                    prebuiltVoiceConfig: { voiceName: "Kore" }
+                                }
+                            }
+                        }
+                    };
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${API_KEY}`;
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const result = await response.json();
+                    const part = result?.candidates?.[0]?.content?.parts?.[0];
+                    const audioData = part?.inlineData?.data;
+                    const mimeType = part?.inlineData?.mimeType;
+
+                    if (audioData && mimeType && mimeType.startsWith("audio/")) {
+                        const sampleRate = parseInt(mimeType.match(/rate=(\d+)/)[1], 10);
+                        const pcmData = base64ToArrayBuffer(audioData);
+                        const pcm16 = new Int16Array(pcmData);
+                        const wavBlob = pcmToWav(pcm16, sampleRate);
+                        const audioUrl = URL.createObjectURL(wavBlob);
+                        const audio = new Audio(audioUrl);
+                        
+                        audio.onended = () => {
+                            setIsSpeaking(false);
+                            URL.revokeObjectURL(audioUrl);
+                        };
+                        audio.play();
+                    } else {
+                        throw new Error("Invalid audio response from API.");
+                    }
+                } catch (e) {
+                    console.error("[TTS Error] Error generating speech:", e);
+                    setIsSpeaking(false);
+                }
+            };
+            
+            // Helper functions for TTS audio conversion
+            const base64ToArrayBuffer = (base64) => {
+                const binaryString = atob(base64);
+                const len = binaryString.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                return bytes.buffer;
+            };
+
+            const pcmToWav = (pcmData, sampleRate) => {
+                const buffer = new ArrayBuffer(44 + pcmData.byteLength);
+                const view = new DataView(buffer);
+
+                writeString(view, 0, 'RIFF');
+                view.setUint32(4, 36 + pcmData.byteLength, true);
+                writeString(view, 8, 'WAVE');
+                writeString(view, 12, 'fmt ');
+                view.setUint32(16, 16, true);
+                view.setUint16(20, 1, true); // Mono
+                view.setUint32(24, sampleRate, true);
+                view.setUint32(28, sampleRate * 2, true); // Byte rate
+                view.setUint16(32, 2, true); // Block align
+                view.setUint16(34, 16, true); // Bits per sample
+                writeString(view, 36, 'data');
+                view.setUint32(40, pcmData.byteLength, true);
+
+                const pcmView = new Int16Array(pcmData);
+                let offset = 44;
+                for (let i = 0; i < pcmView.length; i++, offset += 2) {
+                    view.setInt16(offset, pcmView[i], true);
+                }
+                return new Blob([view], { type: 'audio/wav' });
+            };
+
+            const writeString = (view, offset, string) => {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            };
+
+            // Main function to send messages to the API
+            const sendMessage = async () => {
+                if ((input.trim() === '' && !imageFile) || isAIGenerating || isSpeaking || !API_KEY) {
+                    return;
+                }
+
+                // Add the user message (and image if present) to the chat state
+                const userMessage = {
+                    id: generateId(),
+                    text: input,
+                    userId: userId,
+                    timestamp: Date.now(),
+                    image: imageFile ? { data: null, mimeType: imageFile.type } : null
+                };
+                setMessages(prevMessages => [...prevMessages, userMessage]);
+                setInput('');
+                setIsAIGenerating(true);
+                
+                let base64ImageData = null;
+                if (imageFile) {
+                    base64ImageData = await new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                        reader.readAsDataURL(imageFile);
+                    });
+                    userMessage.image.data = base64ImageData;
+                }
+
+                try {
+                    const chatHistory = [...messages, userMessage].map(msg => {
+                        const parts = [{ text: msg.text }];
+                        if (msg.image && msg.image.data) {
+                            parts.push({
+                                inlineData: {
+                                    mimeType: msg.image.mimeType,
+                                    data: msg.image.data
+                                }
+                            });
+                        }
+                        return {
+                            role: msg.userId === userId ? 'user' : 'model',
+                            parts: parts
+                        };
+                    });
+                    
+                    const payload = { contents: chatHistory };
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${API_KEY}`;
+                    
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`API error: ${response.statusText}`);
+                    }
+                    
+                    const result = await response.json();
+                    let responseText = "Sorry, I couldn't generate a response.";
+                    if (result.candidates && result.candidates.length > 0 &&
+                        result.candidates[0].content && result.candidates[0].content.parts &&
+                        result.candidates[0].content.parts.length > 0) {
+                        responseText = result.candidates[0].content.parts[0].text;
+                    }
+
+                    const botMessage = {
+                        id: generateId(),
+                        text: responseText,
+                        userId: 'bot',
+                        timestamp: Date.now(),
+                        type: 'text'
+                    };
+                    setMessages(prevMessages => [...prevMessages, botMessage]);
+
+                } catch (e) {
+                    console.error("Error getting AI response:", e);
+                    const botError = {
+                        id: generateId(),
+                        text: `Sorry, I am having trouble processing that request. Error: ${e.message}`,
+                        userId: 'bot',
+                        timestamp: Date.now(),
+                        type: 'text'
+                    };
+                    setMessages(prevMessages => [...prevMessages, botError]);
+                } finally {
+                    setIsAIGenerating(false);
+                    setImageFile(null);
+                    setImagePreviewUrl(null);
+                }
+            };
+
+            const handleGenerateImage = async () => {
+                if (input.trim() === '' || isImageGenerating || isSpeaking || !API_KEY) {
+                    return;
+                }
+            
+                setMessages(prevMessages => [...prevMessages, {
+                    id: generateId(),
+                    text: `Generate an image for: "${input}"`,
+                    userId: userId,
+                    timestamp: Date.now(),
+                }]);
+                setIsImageGenerating(true);
+                const userPrompt = input;
+                setInput('');
+            
+                try {
+                    const payload = {
+                        instances: { prompt: userPrompt },
+                        parameters: { "sampleCount": 1 }
+                    };
+                    
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${API_KEY}`;
+                    
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.predictions && result.predictions.length > 0 && result.predictions[0].bytesBase64Encoded) {
+                        const base64Data = result.predictions[0].bytesBase64Encoded;
+                        const imageUrl = `data:image/png;base64,${base64Data}`;
+                        
+                        const botMessage = {
+                            id: generateId(),
+                            text: `Here is the image you requested.`,
+                            userId: 'bot',
+                            imageUrl: imageUrl,
+                            type: 'image',
+                            timestamp: Date.now(),
+                        };
+                        setMessages(prevMessages => [...prevMessages, botMessage]);
+                    } else {
+                        throw new Error("No image prediction found in the API response.");
+                    }
+                } catch (e) {
+                    console.error("[AI ERROR] Error generating image:", e);
+                    setMessages(prevMessages => [...prevMessages, {
+                        id: generateId(),
+                        text: `Sorry, I am having trouble generating that image. Error: ${e.message}`,
+                        userId: 'bot',
+                        type: 'text',
+                        timestamp: Date.now(),
+                    }]);
+                } finally {
+                    setIsImageGenerating(false);
+                }
+            };
+            
+
+            const handleImageUpload = (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    setImageFile(file);
+                    setImagePreviewUrl(URL.createObjectURL(file));
+                }
+            };
+
+            const handleRemoveImage = () => {
+                setImageFile(null);
+                setImagePreviewUrl(null);
+            };
+
+            const handleKeyDown = (event) => {
+                if (event.key === 'Enter' && (input.trim() !== '' || imageFile) && !isAIGenerating && !isSpeaking) {
+                    sendMessage();
+                }
+            };
+
+            useEffect(() => {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, [messages]);
+
+            return (
+                <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-slate-900 font-inter">
+                    <div className="flex flex-col w-full max-w-sm md:max-w-xl lg:max-w-2xl bg-slate-800 rounded-2xl shadow-xl overflow-hidden h-[80vh]">
+                        <div className="p-4 bg-slate-700 text-white text-center text-lg font-semibold border-b border-slate-600 rounded-t-2xl">
+                            AI Chatbot (Local)
+                        </div>
+                        
+                        <div className="flex-1 p-4 overflow-y-auto space-y-4">
+                            {!API_KEY && (
+                                <div className="text-center text-red-400 mt-10 p-4 bg-red-900 rounded-lg">
+                                    Please provide your API key in the code to use the app.
+                                </div>
+                            )}
+                            {messages.map((message) => (
+                                <div
+                                    key={message.id}
+                                    className={`flex ${message.userId === userId ? 'justify-end' : 'justify-start'}`}
+                                >
+                                    <div
+                                        className={`max-w-[70%] p-3 rounded-2xl shadow-md ${
+                                            message.userId === userId
+                                                ? 'bg-blue-600 text-white'
+                                                : 'bg-slate-700 text-slate-100'
+                                        } ${
+                                            message.userId === userId
+                                                ? 'rounded-br-none'
+                                                : 'rounded-bl-none'
+                                        }`}
+                                    >
+                                        {message.userId === 'bot' && (
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <CustomIcon name="Bot" size={16} />
+                                                {message.type === 'text' && (
+                                                    <button
+                                                        onClick={() => handleTextToSpeech(message.text)}
+                                                        className="text-white text-xs px-2 py-1 bg-slate-600 rounded-full hover:bg-slate-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        disabled={isSpeaking || isAIGenerating || isImageGenerating}
+                                                    >
+                                                        <CustomIcon name="Volume2" size={12} className="inline-block mr-1" />
+                                                        Speak ✨
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+                                        {message.type === 'text' && (
+                                            <p className="text-sm break-words inline-block">{message.text}</p>
+                                        )}
+                                        {message.type === 'image' && (
+                                            <div className="flex flex-col items-start gap-2">
+                                                <img src={message.imageUrl} alt="Generated" className="rounded-lg max-w-full h-auto" />
+                                                <a href={message.imageUrl} download={`gemini-image-${message.id}.png`} className="flex items-center gap-1 text-xs text-blue-300 hover:text-blue-200 transition-colors">
+                                                    <CustomIcon name="Download" size={12} />
+                                                    Download Image
+                                                </a>
+                                            </div>
+                                        )}
+                                        {message.userId === userId && message.image && (
+                                            <div className="mt-2">
+                                                <img src={imagePreviewUrl} alt="Uploaded" className="rounded-lg max-w-full h-auto" />
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+
+                            {(isAIGenerating || isImageGenerating) && (
+                                <div className="flex items-start justify-start">
+                                    <div className="p-3 rounded-2xl bg-slate-700 text-slate-100 max-w-[70%] rounded-bl-none">
+                                        <CustomIcon name="Bot" size={16} className="inline-block mr-2" />
+                                        <div className="dot-flashing inline-block align-middle ml-2" />
+                                    </div>
+                                </div>
+                            )}
+
+                            <div ref={messagesEndRef} />
+                        </div>
+                        
+                        <div className="p-4 bg-slate-700 border-t border-slate-600 rounded-b-2xl">
+                            {imagePreviewUrl && (
+                                <div className="relative mb-2 p-2 border border-slate-600 rounded-lg bg-slate-700">
+                                    <img src={imagePreviewUrl} alt="Preview" className="max-h-24 rounded-md" />
+                                    <button
+                                        onClick={handleRemoveImage}
+                                        className="absolute top-1 right-1 p-1 bg-red-500 rounded-full text-white hover:bg-red-600 transition-colors"
+                                    >
+                                        <CustomIcon name="XCircle" size={16} />
+                                    </button>
+                                </div>
+                            )}
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    className="flex-1 p-3 bg-slate-800 text-white placeholder-slate-400 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                                    placeholder="Type your message..."
+                                    value={input}
+                                    onChange={(e) => setInput(e.target.value)}
+                                    onKeyDown={handleKeyDown}
+                                    disabled={isAIGenerating || isSpeaking || isImageGenerating || !API_KEY}
+                                />
+                                <label className="p-3 bg-purple-600 text-white rounded-full shadow-lg hover:bg-purple-700 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={handleImageUpload}
+                                        className="hidden"
+                                        disabled={isAIGenerating || isSpeaking || isImageGenerating || !API_KEY}
+                                    />
+                                    <CustomIcon name="Image" size={20} />
+                                </label>
+                                <button
+                                    onClick={handleGenerateImage}
+                                    className="p-3 bg-amber-600 text-white rounded-full shadow-lg hover:bg-amber-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                    disabled={input.trim() === '' || isAIGenerating || isSpeaking || isImageGenerating || !API_KEY}
+                                >
+                                    <CustomIcon name="Wand" size={20} />
+                                </button>
+                                <button
+                                    onClick={sendMessage}
+                                    className="p-3 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                    disabled={(input.trim() === '' && !imageFile) || isAIGenerating || isSpeaking || isImageGenerating || !API_KEY}
+                                >
+                                    <CustomIcon name="Send" size={20} />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Render the App component
+        const domNode = document.getElementById('root');
+        const root = ReactDOM.createRoot(domNode);
+        root.render(
+            <React.StrictMode>
+                <App />
+            </React.StrictMode>
+        );
+    </script>
+</body>
+</html>
