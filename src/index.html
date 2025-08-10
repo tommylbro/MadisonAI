@@ -176,8 +176,7 @@
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        // Correctly get the API key from the environment
-        const apiKey = typeof __api_key !== 'undefined' ? __api_key : 'AIzaSyCBBfnCqQlfrOCmSPzNuyC8F4jT0OHUX7g';
+        const apiKey = typeof __api_key !== 'undefined' ? __api_key : '';
 
         // UI elements
         const statusIndicator = document.getElementById('status-indicator');
@@ -207,6 +206,7 @@
         let activeMode = 'refine'; // 'refine' or 'explain'
         let isTunerActive = false;
         let isAIGenerating = false;
+        let hasListenerBeenSet = false;
         let extractedCode = { content: '', language: '' };
         
         // Check if the API key is available
@@ -284,9 +284,34 @@
         }
         
         // --- Firebase Initialization and Data Fetching ---
-        window.addEventListener('load', async () => {
+        function renderMessages(messages) {
+            messagesContainer.innerHTML = ''; // Clear old messages
+            messages.forEach(msg => {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `p-4 rounded-xl shadow-md max-w-lg relative ${msg.role === 'user' ? 'bg-gray-700 self-end ml-auto' : 'bg-indigo-700 self-start mr-auto'}`;
+                messageDiv.innerHTML = renderMarkdown(msg.text);
+                
+                const codeBlock = extractCodeBlocks(msg.text);
+                if (codeBlock.content) {
+                    const codeBtn = document.createElement('button');
+                    codeBtn.className = "absolute top-2 right-2 p-1 rounded-full text-white bg-indigo-500 hover:bg-indigo-400";
+                    codeBtn.setAttribute('aria-label', 'Open code sidebar');
+                    codeBtn.innerHTML = `
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-code">
+                            <polyline points="16 18 22 12 16 6" />
+                            <polyline points="8 6 2 12 8 18" />
+                        </svg>
+                    `;
+                    codeBtn.onclick = () => handleOpenCodeSidebar(codeBlock.content, codeBlock.language);
+                    messageDiv.appendChild(codeBtn);
+                }
+                messagesContainer.appendChild(messageDiv);
+            });
+            scrollToBottom();
+        }
+
+        async function initFirebaseAndListen() {
             try {
-                // If firebase config is not available, we can't connect to Firestore.
                 if (!firebaseConfig || !firebaseConfig.apiKey) {
                     console.log("Firebase configuration is missing. Running in offline mode.");
                     statusIndicator.textContent = 'Offline';
@@ -301,15 +326,7 @@
                         { role: 'user', text: 'Hey, can you help me with a melody?', timestamp: new Date() },
                         { role: 'assistant', text: 'Sure, I can help you with that! How about we start with a simple C major chord progression?', timestamp: new Date() }
                     ];
-
-                    messagesContainer.innerHTML = ''; 
-                    mockMessages.forEach(msg => {
-                        const messageDiv = document.createElement('div');
-                        messageDiv.className = `p-4 rounded-xl shadow-md max-w-lg relative ${msg.role === 'user' ? 'bg-gray-700 self-end ml-auto' : 'bg-indigo-700 self-start mr-auto'}`;
-                        messageDiv.innerHTML = renderMarkdown(msg.text);
-                        messagesContainer.appendChild(messageDiv);
-                    });
-                    scrollToBottom();
+                    renderMessages(mockMessages);
                     
                     if (!isApiKeyAvailable) {
                         statusIndicator.textContent = 'Offline - AI Disabled';
@@ -322,7 +339,7 @@
                         statusIndicator.textContent = 'Offline';
                     }
                     
-                    return; // Exit the function to prevent further Firebase-related errors
+                    return;
                 }
 
                 const app = initializeApp(firebaseConfig);
@@ -333,61 +350,39 @@
                     if (user) {
                         userId = user.uid;
                         isAuthReady = true;
-                        if(isApiKeyAvailable) {
-                            statusIndicator.textContent = 'Online Mode';
-                            statusIndicator.classList.remove('bg-red-500');
-                            statusIndicator.classList.add('bg-green-500');
-                            chatInput.disabled = false;
-                            sendBtn.disabled = false;
-                        } else {
-                            statusIndicator.textContent = 'Online - AI Disabled';
-                            statusIndicator.classList.remove('bg-red-500');
-                            statusIndicator.classList.add('bg-yellow-500');
-                            showMessageBox("AI features are disabled due to missing configuration.", false);
+
+                        if (!hasListenerBeenSet) {
+                             if(isApiKeyAvailable) {
+                                statusIndicator.textContent = 'Online Mode';
+                                statusIndicator.classList.remove('bg-red-500');
+                                statusIndicator.classList.add('bg-green-500');
+                                chatInput.disabled = false;
+                                sendBtn.disabled = false;
+                            } else {
+                                statusIndicator.textContent = 'Online - AI Disabled';
+                                statusIndicator.classList.remove('bg-red-500');
+                                statusIndicator.classList.add('bg-yellow-500');
+                                showMessageBox("AI features are disabled due to missing configuration.", false);
+                            }
+                            const userChatsCollection = collection(db, `artifacts/${appId}/users/${userId}/chats`);
+                            const q = query(userChatsCollection);
+
+                            onSnapshot(q, (snapshot) => {
+                                const fetchedMessages = [];
+                                snapshot.forEach(doc => {
+                                    const data = doc.data();
+                                    if (data && data.timestamp) { // Ensure data and timestamp exist
+                                        fetchedMessages.push(data);
+                                    }
+                                });
+                                fetchedMessages.sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
+                                renderMessages(fetchedMessages);
+                            }, (error) => {
+                                console.error("Error fetching messages:", error);
+                                showMessageBox("Error fetching chats. Please check your network connection and try again.");
+                            });
+                            hasListenerBeenSet = true;
                         }
-                        
-                        const userChatsCollection = collection(db, `artifacts/${appId}/users/${userId}/chats`);
-                        
-                        const q = query(userChatsCollection);
-
-                        onSnapshot(q, (snapshot) => {
-                            messagesContainer.innerHTML = ''; // Clear old messages
-                            const fetchedMessages = [];
-                            snapshot.forEach(doc => {
-                                const data = doc.data();
-                                fetchedMessages.push(data);
-                            });
-
-                            // Sort messages by timestamp
-                            fetchedMessages.sort((a, b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0));
-
-                            fetchedMessages.forEach(msg => {
-                                const messageDiv = document.createElement('div');
-                                messageDiv.className = `p-4 rounded-xl shadow-md max-w-lg relative ${msg.role === 'user' ? 'bg-gray-700 self-end ml-auto' : 'bg-indigo-700 self-start mr-auto'}`;
-                                messageDiv.innerHTML = renderMarkdown(msg.text);
-                                
-                                const codeBlock = extractCodeBlocks(msg.text);
-                                if (codeBlock.content) {
-                                    const codeBtn = document.createElement('button');
-                                    codeBtn.className = "absolute top-2 right-2 p-1 rounded-full text-white bg-indigo-500 hover:bg-indigo-400";
-                                    codeBtn.setAttribute('aria-label', 'Open code sidebar');
-                                    codeBtn.innerHTML = `
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-code">
-                                            <polyline points="16 18 22 12 16 6" />
-                                            <polyline points="8 6 2 12 8 18" />
-                                        </svg>
-                                    `;
-                                    codeBtn.onclick = () => handleOpenCodeSidebar(codeBlock.content, codeBlock.language);
-                                    messageDiv.appendChild(codeBtn);
-                                }
-
-                                messagesContainer.appendChild(messageDiv);
-                            });
-                            scrollToBottom();
-                        }, (error) => {
-                            console.error("Error fetching messages:", error);
-                            showMessageBox("Error fetching chats. Please check your network connection and try again.");
-                        });
 
                     } else {
                         if (initialAuthToken) {
@@ -407,12 +402,13 @@
                         }
                     }
                 });
-
             } catch (e) {
                 console.error("Failed to initialize Firebase:", e);
                 showMessageBox(`Error: ${e.message}`);
             }
-        });
+        }
+        
+        window.addEventListener('load', initFirebaseAndListen);
         
         // --- Microphone and Tuner Logic ---
         function startTuner() {
@@ -545,9 +541,19 @@
             chatInput.disabled = true;
             sendBtn.disabled = true;
             
-            // If the API key is not available, we can't send messages to the AI.
             if (!isApiKeyAvailable) {
-                createAndAppendMessage('user', prompt);
+                const newUserMessage = {
+                    role: 'user',
+                    text: prompt,
+                    timestamp: serverTimestamp(),
+                    type: type,
+                };
+                try {
+                    await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chats`), newUserMessage);
+                } catch (e) {
+                    console.error("Error adding user message to Firestore:", e);
+                    showMessageBox("Could not save your message. Please try again.");
+                }
                 showMessageBox("AI features are disabled due to missing configuration.", true);
                 isAIGenerating = false;
                 chatInput.disabled = false;
@@ -563,7 +569,6 @@
                 type: type,
             };
 
-            // Add the user message to Firestore
             try {
                 await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chats`), newUserMessage);
             } catch (e) {
