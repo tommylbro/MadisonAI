@@ -182,7 +182,7 @@
             appId: "1:167580287666:android:b057a4176a46729ad47fab"
         };
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        const apiKey = firebaseConfig.apiKey; // Corrected: get API key from config
+        const apiKey = firebaseConfig.apiKey;
 
         // UI elements
         const statusIndicator = document.getElementById('status-indicator');
@@ -243,7 +243,6 @@
         }
         
         function renderMarkdown(markdownText) {
-            // marked is now a global variable, not an imported module
             return marked.parse(markdownText);
         }
 
@@ -287,6 +286,26 @@
             extractedCode = { content: '', language: '' };
         }
         
+        // --- Centralized UI State Management ---
+        function setChatState(state) {
+            if (state === 'enabled') {
+                isAIGenerating = false;
+                chatInput.disabled = false;
+                sendBtn.disabled = false;
+                chatInput.placeholder = "Type a message...";
+            } else if (state === 'sending') {
+                isAIGenerating = true;
+                chatInput.disabled = true;
+                sendBtn.disabled = true;
+                chatInput.placeholder = "Sending...";
+            } else if (state === 'disabled') {
+                isAIGenerating = false;
+                chatInput.disabled = true;
+                sendBtn.disabled = true;
+                chatInput.placeholder = "Not connected...";
+            }
+        }
+
         // --- Firebase Initialization and Data Fetching ---
         function renderMessages(messages) {
             messagesContainer.innerHTML = ''; // Clear old messages
@@ -320,6 +339,7 @@
 
         async function initFirebaseAndListen() {
             console.log("Initializing Firebase...");
+            setChatState('disabled');
             try {
                 // If firebaseConfig is not a valid object, we can't initialize the app.
                 if (!firebaseConfig.projectId || !firebaseConfig.apiKey) {
@@ -330,15 +350,13 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
-                // Add a timeout to handle connection failures gracefully
                 const authTimeout = setTimeout(() => {
                     if (!isAuthReady) {
                         showMessageBox("Connection timed out. Please check your network.", true);
                         statusIndicator.textContent = 'Offline';
                         statusIndicator.classList.remove('bg-green-500');
                         statusIndicator.classList.add('bg-red-500');
-                        chatInput.disabled = true;
-                        sendBtn.disabled = true;
+                        setChatState('disabled');
                     }
                 }, 10000); // 10 seconds timeout
 
@@ -352,8 +370,7 @@
                         statusIndicator.textContent = 'Online';
                         statusIndicator.classList.remove('bg-red-500', 'bg-gray-500');
                         statusIndicator.classList.add('bg-green-500');
-                        chatInput.disabled = false;
-                        sendBtn.disabled = false;
+                        setChatState('enabled');
                         
                         if (!hasListenerBeenSet) {
                             console.log("Setting up Firestore listener for user:", userId);
@@ -364,12 +381,10 @@
                                 const fetchedMessages = [];
                                 snapshot.forEach(doc => {
                                     const data = doc.data();
-                                    // Make sure timestamp exists before using it
                                     if (data && data.timestamp) {
                                         fetchedMessages.push(data);
                                     }
                                 });
-                                // Filter out messages without a timestamp before sorting
                                 const sortedMessages = fetchedMessages
                                     .filter(msg => msg.timestamp)
                                     .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
@@ -380,8 +395,7 @@
                                 statusIndicator.textContent = 'Offline';
                                 statusIndicator.classList.remove('bg-green-500');
                                 statusIndicator.classList.add('bg-red-500');
-                                chatInput.disabled = true;
-                                sendBtn.disabled = true;
+                                setChatState('disabled');
                             });
                             hasListenerBeenSet = true;
                         }
@@ -390,6 +404,7 @@
                         statusIndicator.textContent = 'Connecting...';
                         statusIndicator.classList.remove('bg-green-500', 'bg-gray-500');
                         statusIndicator.classList.add('bg-red-500');
+                        setChatState('disabled');
                         
                         try {
                             if (initialAuthToken) {
@@ -405,8 +420,7 @@
                             statusIndicator.textContent = 'Offline';
                             statusIndicator.classList.remove('bg-green-500');
                             statusIndicator.classList.add('bg-red-500');
-                            chatInput.disabled = true;
-                            sendBtn.disabled = true;
+                            setChatState('disabled');
                         }
                     }
                 });
@@ -416,6 +430,7 @@
                 statusIndicator.textContent = 'Offline';
                 statusIndicator.classList.remove('bg-green-500');
                 statusIndicator.classList.add('bg-red-500');
+                setChatState('disabled');
             }
         }
         
@@ -430,7 +445,8 @@
             tunerBtn.classList.add('bg-red-500', 'text-white');
             tunerIconOff.classList.add('hidden');
             tunerIconOn.classList.remove('hidden');
-            chatInput.disabled = true;
+            
+            setChatState('disabled');
             chatInput.placeholder = 'Listening...';
 
             navigator.mediaDevices.getUserMedia({ audio: true })
@@ -507,8 +523,9 @@
                     tunerBtn.classList.add('bg-gray-600', 'text-gray-400');
                     tunerIconOff.classList.remove('hidden');
                     tunerIconOn.classList.add('hidden');
-                    chatInput.disabled = false;
-                    chatInput.placeholder = 'Type a message...';
+                    
+                    if (isAuthReady) setChatState('enabled');
+                    
                     if (err.name === 'NotAllowedError' || err.name === 'NotReadableError') {
                         showMessageBox('Microphone access denied. Please grant permission in your browser settings.');
                     } else {
@@ -523,8 +540,9 @@
             tunerBtn.classList.add('bg-gray-600', 'text-gray-400');
             tunerIconOff.classList.remove('hidden');
             tunerIconOn.classList.add('hidden');
-            chatInput.disabled = false;
-            chatInput.placeholder = 'Type a message...';
+
+            if (isAuthReady) setChatState('enabled');
+            
             if (animationFrameId) {
                 cancelAnimationFrame(animationFrameId);
             }
@@ -548,10 +566,7 @@
             
             handleCloseCodeSidebar();
             
-            isAIGenerating = true;
-            chatInput.disabled = true;
-            sendBtn.disabled = true;
-            chatInput.placeholder = "Sending...";
+            setChatState('sending');
             
             if (!apiKey || apiKey === "dummy") {
                 const newUserMessage = {
@@ -569,11 +584,8 @@
                     showMessageBox("Could not save your message. Please try again.");
                 }
                 showMessageBox("AI features are disabled due to missing configuration.", true);
-                isAIGenerating = false;
-                chatInput.disabled = false;
-                sendBtn.disabled = false;
+                setChatState('enabled');
                 chatInput.value = '';
-                chatInput.placeholder = "Type a message...";
                 return;
             }
 
@@ -650,11 +662,8 @@
                 console.error("API call error:", e);
                 showMessageBox("Failed to get a response from the AI. Check your network or try again later.");
             } finally {
-                // This is the critical change: ensure the UI is reset regardless of success or failure
-                isAIGenerating = false;
-                chatInput.disabled = false;
-                sendBtn.disabled = false;
-                chatInput.placeholder = "Type a message...";
+                // The centralized function ensures both elements are reset.
+                setChatState('enabled');
             }
         }
 
