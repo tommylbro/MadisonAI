@@ -291,25 +291,29 @@
         function renderMessages(messages) {
             messagesContainer.innerHTML = ''; // Clear old messages
             messages.forEach(msg => {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = `p-4 rounded-xl shadow-md max-w-lg relative ${msg.role === 'user' ? 'bg-gray-700 self-end ml-auto' : 'bg-indigo-700 self-start mr-auto'}`;
-                messageDiv.innerHTML = renderMarkdown(msg.text);
-                
-                const codeBlock = extractCodeBlocks(msg.text);
-                if (codeBlock.content) {
-                    const codeBtn = document.createElement('button');
-                    codeBtn.className = "absolute top-2 right-2 p-1 rounded-full text-white bg-indigo-500 hover:bg-indigo-400";
-                    codeBtn.setAttribute('aria-label', 'Open code sidebar');
-                    codeBtn.innerHTML = `
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-code">
-                            <polyline points="16 18 22 12 16 6" />
-                            <polyline points="8 6 2 12 8 18" />
-                        </svg>
-                    `;
-                    codeBtn.onclick = () => handleOpenCodeSidebar(codeBlock.content, codeBlock.language);
-                    messageDiv.appendChild(codeBtn);
+                try {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = `p-4 rounded-xl shadow-md max-w-lg relative ${msg.role === 'user' ? 'bg-gray-700 self-end ml-auto' : 'bg-indigo-700 self-start mr-auto'}`;
+                    messageDiv.innerHTML = renderMarkdown(msg.text);
+                    
+                    const codeBlock = extractCodeBlocks(msg.text);
+                    if (codeBlock.content) {
+                        const codeBtn = document.createElement('button');
+                        codeBtn.className = "absolute top-2 right-2 p-1 rounded-full text-white bg-indigo-500 hover:bg-indigo-400";
+                        codeBtn.setAttribute('aria-label', 'Open code sidebar');
+                        codeBtn.innerHTML = `
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-code">
+                                <polyline points="16 18 22 12 16 6" />
+                                <polyline points="8 6 2 12 8 18" />
+                            </svg>
+                        `;
+                        codeBtn.onclick = () => handleOpenCodeSidebar(codeBlock.content, codeBlock.language);
+                        messageDiv.appendChild(codeBtn);
+                    }
+                    messagesContainer.appendChild(messageDiv);
+                } catch (e) {
+                    console.error("Error rendering message:", e, "Message data:", msg);
                 }
-                messagesContainer.appendChild(messageDiv);
             });
             scrollToBottom();
         }
@@ -352,7 +356,7 @@
                         sendBtn.disabled = false;
                         
                         if (!hasListenerBeenSet) {
-                            console.log("Setting up Firestore listener...");
+                            console.log("Setting up Firestore listener for user:", userId);
                             const userChatsCollection = collection(db, `artifacts/${appId}/users/${userId}/chats`);
                             const q = query(userChatsCollection);
 
@@ -360,12 +364,16 @@
                                 const fetchedMessages = [];
                                 snapshot.forEach(doc => {
                                     const data = doc.data();
-                                    if (data && data.timestamp) { // Ensure data and timestamp exist
+                                    // Make sure timestamp exists before using it
+                                    if (data && data.timestamp) {
                                         fetchedMessages.push(data);
                                     }
                                 });
-                                fetchedMessages.sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
-                                renderMessages(fetchedMessages);
+                                // Filter out messages without a timestamp before sorting
+                                const sortedMessages = fetchedMessages
+                                    .filter(msg => msg.timestamp)
+                                    .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
+                                renderMessages(sortedMessages);
                             }, (error) => {
                                 console.error("Error fetching messages:", error);
                                 showMessageBox("Error fetching chats. Please check your network connection.");
