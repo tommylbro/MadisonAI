@@ -174,7 +174,7 @@
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         // Provide a default empty object to avoid initialization errors
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-            apiKey: "AIzaSyCBBfnCqQlfrOCmSPzNuyC8F4jT0OHUX7g",
+            apiKey: "AIzaSyAGcu2yhTp8ZMbATlKc1zl7daXHtFyzGQI",
             authDomain: "ai-chatbot-88602",
             projectId: "167580287666",
             storageBucket: "ai-chatbot-88602",
@@ -182,7 +182,7 @@
             appId: "1:167580287666:android:b057a4176a46729ad47fab"
         };
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        const apiKey = "AIzaSyCBBfnCqQlfrOCmSPzNuyC8F4jT0OHUX7g"; // Leave as-is for the canvas environment to provide
+        const apiKey = firebaseConfig.apiKey; // Corrected: get API key from config
 
         // UI elements
         const statusIndicator = document.getElementById('status-indicator');
@@ -315,9 +315,9 @@
         }
 
         async function initFirebaseAndListen() {
+            console.log("Initializing Firebase...");
             try {
                 // If firebaseConfig is not a valid object, we can't initialize the app.
-                // We'll provide a dummy object to prevent a crash, but the app won't be functional.
                 if (!firebaseConfig.projectId || !firebaseConfig.apiKey) {
                     throw new Error("Firebase configuration is missing.");
                 }
@@ -325,9 +325,23 @@
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
+                
+                // Add a timeout to handle connection failures gracefully
+                const authTimeout = setTimeout(() => {
+                    if (!isAuthReady) {
+                        showMessageBox("Connection timed out. Please check your network.", true);
+                        statusIndicator.textContent = 'Offline';
+                        statusIndicator.classList.remove('bg-green-500');
+                        statusIndicator.classList.add('bg-red-500');
+                        chatInput.disabled = true;
+                        sendBtn.disabled = true;
+                    }
+                }, 10000); // 10 seconds timeout
 
                 onAuthStateChanged(auth, async (user) => {
+                    clearTimeout(authTimeout); // Clear the timeout as we've received a response
                     if (user) {
+                        console.log("User authenticated:", user.uid);
                         userId = user.uid;
                         isAuthReady = true;
                         
@@ -338,6 +352,7 @@
                         sendBtn.disabled = false;
                         
                         if (!hasListenerBeenSet) {
+                            console.log("Setting up Firestore listener...");
                             const userChatsCollection = collection(db, `artifacts/${appId}/users/${userId}/chats`);
                             const q = query(userChatsCollection);
 
@@ -357,18 +372,33 @@
                                 statusIndicator.textContent = 'Offline';
                                 statusIndicator.classList.remove('bg-green-500');
                                 statusIndicator.classList.add('bg-red-500');
+                                chatInput.disabled = true;
+                                sendBtn.disabled = true;
                             });
                             hasListenerBeenSet = true;
                         }
                     } else {
+                        console.log("User not authenticated, attempting to sign in...");
                         statusIndicator.textContent = 'Connecting...';
                         statusIndicator.classList.remove('bg-green-500', 'bg-gray-500');
                         statusIndicator.classList.add('bg-red-500');
                         
-                        if (initialAuthToken) {
-                            await signInWithCustomToken(auth, initialAuthToken);
-                        } else {
-                            await signInAnonymously(auth);
+                        try {
+                            if (initialAuthToken) {
+                                console.log("Signing in with custom token...");
+                                await signInWithCustomToken(auth, initialAuthToken);
+                            } else {
+                                console.log("No custom token found, signing in anonymously...");
+                                await signInAnonymously(auth);
+                            }
+                        } catch (e) {
+                            console.error("Authentication failed:", e);
+                            showMessageBox(`Authentication failed: ${e.message}`, true);
+                            statusIndicator.textContent = 'Offline';
+                            statusIndicator.classList.remove('bg-green-500');
+                            statusIndicator.classList.add('bg-red-500');
+                            chatInput.disabled = true;
+                            sendBtn.disabled = true;
                         }
                     }
                 });
@@ -514,7 +544,7 @@
             chatInput.disabled = true;
             sendBtn.disabled = true;
             
-            if (!apiKey) {
+            if (!apiKey || apiKey === "dummy") {
                 const newUserMessage = {
                     role: 'user',
                     text: prompt,
@@ -522,7 +552,9 @@
                     type: type,
                 };
                 try {
-                    await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chats`), newUserMessage);
+                    if (db && userId) {
+                        await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chats`), newUserMessage);
+                    }
                 } catch (e) {
                     console.error("Error adding user message to Firestore:", e);
                     showMessageBox("Could not save your message. Please try again.");
