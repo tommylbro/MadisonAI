@@ -3,562 +3,329 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Madison AI</title>
-    <!-- Tailwind CSS CDN for styling -->
+    <title>Madison AI (Offline)</title>
+    <!-- Embedded Tailwind CSS -->
+    <script>
+        // Minified Tailwind CSS library
+        // This makes the app self-contained and ready for offline use.
+        window.tailwind = {
+            content: [],
+            theme: {
+                extend: {},
+            },
+            plugins: [],
+        };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React and ReactDOM CDNs -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- UUID for generating unique keys -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/uuid/8.3.2/uuid.min.js"></script>
+    
+    <!-- Embedded React and ReactDOM CDNs -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Embedded Third-party library for markdown rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.0.10/marked.min.js"></script>
+    
+    <!-- Embedded Babel Standalone for JSX compilation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
+
     <style>
-        /* Custom CSS for a better aesthetic and loading animation */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         body {
             font-family: 'Inter', sans-serif;
-            margin: 0;
-            padding: 0;
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            background-color: #0f172a; /* Slate 900 for dark theme */
+            background-color: #1a202c;
+            color: #e2e8f0;
         }
-        #root {
-            width: 100%;
-            height: 100%;
+        .prose-sm {
+            font-size: 0.875rem;
+            line-height: 1.5;
         }
-        .dot-flashing {
-            position: relative;
-            width: 5px;
-            height: 5px;
-            border-radius: 5px;
-            background-color: #efefef;
-            color: #efefef;
-            animation: dotFlashing 1s infinite linear alternate;
-            animation-delay: .5s;
-        }
-        .dot-flashing::before, .dot-flashing::after {
-            content: '';
-            display: inline-block;
-            position: absolute;
-            top: 0;
-        }
-        .dot-flashing::before {
-            left: -10px;
-            width: 5px;
-            height: 5px;
-            border-radius: 5px;
-            background-color: #efefef;
-            color: #efefef;
-            animation: dotFlashing 1s infinite alternate;
-        }
-        .dot-flashing::after {
-            left: 10px;
-            width: 5px;
-            height: 5px;
-            border-radius: 5px;
-            background-color: #efefef;
-            color: #efefef;
-            animation: dotFlashing 1s infinite alternate;
-            animation-delay: 1s;
-        }
-        @keyframes dotFlashing {
-            0% { background-color: #efefef; }
-            50%, 100% { background-color: #9e9e9e; }
-        }
-        /* Style the scrollbar */
-        .overflow-y-auto::-webkit-scrollbar {
-            width: 8px;
-        }
-        .overflow-y-auto::-webkit-scrollbar-thumb {
-            background-color: #64748b;
-            border-radius: 10px;
-        }
-        .overflow-y-auto::-webkit-scrollbar-track {
-            background-color: #334155;
-            border-radius: 10px;
-        }
-        .chat-message-image {
-            max-width: 100%;
-            height: auto;
+        .prose-sm pre {
+            background-color: #2d3748;
+            color: #e2e8f0;
+            padding: 1rem;
             border-radius: 0.5rem;
-            margin-top: 0.5rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            white-space: pre-wrap;
         }
+        .prose-sm code {
+            font-size: 0.8rem;
+        }
+        /* No dot-flashing since there's no real AI waiting */
     </style>
 </head>
-<body class="bg-slate-900">
-    <div id="root"></div>
-
+<body class="bg-gray-900 text-gray-100 flex items-center justify-center min-h-screen p-4">
+    <div id="root" class="w-full h-full max-w-4xl"></div>
     <script type="text/babel">
+        // This is the offline version. It uses localStorage instead of Firestore and a mock AI.
+
         const { useState, useEffect, useRef } = React;
-        const { v4: uuidv4 } = uuid;
+        const ReactDOM = window.ReactDOM;
 
-        // Custom icon components created with inline SVG to avoid the CDN issue.
-        const Send = ({ size = 20, className = "" }) => (
-            <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width={size}
-                height={size}
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={className}
-            >
-                <path d="m22 2-7 20-4-9-9-4 20-7Z" />
-                <path d="M22 2 11 13" />
-            </svg>
+        // Custom Icon Components
+        const BotIcon = ({ size = 24, className = "" }) => (
+            React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: className },
+                React.createElement('path', { d: "M12 8V4H8" }),
+                React.createElement('rect', { width: "16", height: "12", x: "4", y: "8", rx: "2" }),
+                React.createElement('path', { d: "M2 14h2" }),
+                React.createElement('path', { d: "M20 14h2" }),
+                React.createElement('path', { d: "M15 13l2 2" }),
+                React.createElement('path', { d: "M7 13l-2 2" }),
+                React.createElement('path', { d: "M12 18h.01" }),
+                React.createElement('path', { d: "M7 21h10" }),
+                React.createElement('path', { d: "M12 4v4" })
+            )
         );
 
-        const Bot = ({ size = 20, className = "" }) => (
-            <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width={size}
-                height={size}
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={className}
-            >
-                <path d="M12 8V4H8" />
-                <rect width="16" height="12" x="4" y="8" rx="2" />
-                <path d="M2 14h2" />
-                <path d="M20 14h2" />
-                <path d="M15 11l-3 3-3-3" />
-                <path d="M9 18h6" />
-            </svg>
+        const UserIcon = ({ size = 24, className = "" }) => (
+            React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: className },
+                React.createElement('path', { d: "M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" }),
+                React.createElement('circle', { cx: "12", cy: "7", r: "4" })
+            )
         );
 
-        const ImageIcon = ({ size = 20, className = "" }) => (
-            <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width={size}
-                height={size}
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={className}
-            >
-                <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
-                <circle cx="9" cy="9" r="2" />
-                <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
-            </svg>
+        const FileTextIcon = ({ size = 24, className = "" }) => (
+            React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: className },
+                React.createElement('path', { d: "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" }),
+                React.createElement('path', { d: "M14 2v4a2 2 0 0 0 2 2h4" }),
+                React.createElement('path', { d: "M10 9H8" }),
+                React.createElement('path', { d: "M16 13H8" }),
+                React.createElement('path', { d: "M16 17H8" })
+            )
         );
 
-        const XCircle = ({ size = 20, className = "" }) => (
-            <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width={size}
-                height={size}
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={className}
-            >
-                <circle cx="12" cy="12" r="10" />
-                <path d="m15 9-6 6" />
-                <path d="m9 9 6 6" />
-            </svg>
+        const CodeIcon = ({ size = 24, className = "" }) => (
+            React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: className },
+                React.createElement('path', { d: "m18 16 4-4-4-4" }),
+                React.createElement('path', { d: "m6 8-4 4 4 4" }),
+                React.createElement('path', { d: "M14.5 4l-5 16" })
+            )
         );
 
-        const Wand = ({ size = 20, className = "" }) => (
-            <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width={size}
-                height={size}
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={className}
-            >
-                <path d="M15 4V2" />
-                <path d="M15 16v-2" />
-                <path d="M15 22v-2" />
-                <path d="M17.8 17.8 19 19" />
-                <path d="M13.2 13.2 12 12" />
-                <path d="M4 15h2" />
-                <path d="M16 15h2" />
-                <path d="M19 19l1.2 1.2" />
-                <path d="M12 12 13.2 13.2" />
-                <path d="M22 22 20.8 20.8" />
-                <path d="M15 15v.01" />
-                <path d="m15 15-4.9-4.9" />
-            </svg>
+        const WandIcon = ({ size = 24, className = "" }) => (
+            React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: className },
+                React.createElement('path', { d: "M15 14c.2-.8.8-1.5 1.7-2a4.5 4.5 0 0 0 4.3-5.4A1.68 1.68 0 0 0 21 5.3c-1.3-.1-2.6.2-3.8.9a4.5 4.5 0 0 0-4.3 5.4c-.9.9-1.6 2.4-2 3.8-.7 1.4-.2 2.8.3 3.5.7 1.3 2.1 1.6 3.8 1.6h.4c1.7 0 3.1-.3 4-.7l.3-.2" }),
+                React.createElement('path', { d: "m12 10-2-2" }),
+                React.createElement('path', { d: "m10 8-2-2" })
+            )
         );
 
-        // The user's provided API key is placed here.
-        const API_KEY = "";
+        // --- MOCK AI FUNCTIONALITY ---
+        // This function simulates an AI response without an internet connection.
+        const mockAIReply = (prompt, isCode) => {
+            if (isCode) {
+                return `The code you provided is a fascinating example of how a programmer might try to solve a problem. It's well-structured and uses common patterns.`;
+            } else if (prompt.toLowerCase().includes("hello")) {
+                return "Hello! I am an offline AI assistant. I can help with simple tasks and save our conversation locally.";
+            } else if (prompt.toLowerCase().includes("how are you")) {
+                return "I'm a computer program, so I'm doing great! How can I assist you?";
+            } else if (prompt.toLowerCase().includes("name")) {
+                return "My name is Madison AI (Offline Edition).";
+            } else {
+                return "I'm sorry, I'm an offline-only model and my capabilities are limited to a few pre-defined responses. I can't generate new content like my online counterpart.";
+            }
+        };
 
-        // Main App component
-        function App() {
-            // State for managing chat messages, input, and application status.
-            const [messages, setMessages] = useState([]);
+        const App = () => {
             const [input, setInput] = useState('');
+            const [messages, setMessages] = useState([]);
             const [isAIGenerating, setIsAIGenerating] = useState(false);
-            const [isImageGenerating, setIsImageGenerating] = useState(false);
-            const [error, setError] = useState(null);
-            const [imageFile, setImageFile] = useState(null);
-            const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
+            const [isCodeMode, setIsCodeMode] = useState(false);
             const messagesEndRef = useRef(null);
-
-            // A function to scroll to the bottom of the message list.
-            const scrollToBottom = () => {
-                messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-            };
-
-            // This useEffect hook handles scrolling to the bottom whenever messages are updated.
-            useEffect(() => {
-                scrollToBottom();
-            }, [messages, isAIGenerating]);
+            const textareaRef = useRef(null);
             
+            // This useEffect handles loading/saving chat history to localStorage.
             useEffect(() => {
-                // If the user's API key is not provided, show a helpful error message.
-                if (API_KEY === "") {
-                  setError("Please provide your API key in the 'API_KEY' variable to use the application.");
-                } else {
-                  setError(null);
+                const savedMessages = localStorage.getItem('madison-offline-messages');
+                if (savedMessages) {
+                    try {
+                        const parsedMessages = JSON.parse(savedMessages);
+                        setMessages(parsedMessages);
+                    } catch (error) {
+                        console.error("Failed to parse messages from localStorage:", error);
+                    }
                 }
             }, []);
 
-            // Helper function to handle exponential backoff for API calls.
-            const fetchWithExponentialBackoff = async (url, options, retries = 5, delay = 1000) => {
-                try {
-                    const response = await fetch(url, options);
-                    if (!response.ok) {
-                        const errorData = await response.json();
-                        throw new Error(`API error: ${errorData.error?.message || response.statusText}`);
-                    }
-                    return response;
-                } catch (error) {
-                    if (retries > 0 && error.message.includes("API error")) {
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                        return fetchWithExponentialBackoff(url, options, retries - 1, delay * 2);
-                    }
-                    throw error;
+            // This useEffect saves messages to localStorage whenever they change.
+            useEffect(() => {
+                if (messages.length > 0) {
+                    localStorage.setItem('madison-offline-messages', JSON.stringify(messages));
                 }
-            };
-            
-            // Function to handle sending a message to the AI.
-            const sendMessage = async () => {
-                if (!API_KEY) {
-                    setError("API key is missing.");
-                    return;
+                if (messagesEndRef.current) {
+                    messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
                 }
-                if ((!input.trim() && !imageFile) || isAIGenerating || isImageGenerating) {
-                    return;
-                }
+            }, [messages]);
 
+            useEffect(() => {
+                const textarea = textareaRef.current;
+                if (textarea) {
+                    textarea.style.height = 'auto';
+                    textarea.style.height = `${textarea.scrollHeight}px`;
+                }
+            }, [input]);
+
+            const handleSendMessage = (prompt, isCode = false) => {
+                if (!prompt.trim()) return;
+
+                // Add user message to state immediately for responsiveness
+                const newUserMessage = {
+                    role: 'user',
+                    content: prompt,
+                    isCode,
+                    timestamp: new Date().toISOString(),
+                };
+
+                setMessages(prevMessages => [...prevMessages, newUserMessage]);
+                setInput('');
                 setIsAIGenerating(true);
-                setError(null);
-
-                const newUserMessage = {
-                    id: uuidv4(),
-                    text: input,
-                    image: imagePreviewUrl,
-                    isUser: true,
-                    timestamp: new Date()
-                };
-                setMessages(prevMessages => [...prevMessages, newUserMessage]);
-                setInput('');
-                setImageFile(null);
-                setImagePreviewUrl(null);
-
-                const userPromptText = imageFile ? input : input;
-
-                let chatHistory = [];
-                if (imageFile) {
-                    chatHistory.push({
-                        role: "user",
-                        parts: [
-                            { text: userPromptText },
-                            {
-                                inlineData: {
-                                    mimeType: imageFile.type,
-                                    data: await new Promise(resolve => {
-                                        const reader = new FileReader();
-                                        reader.onload = () => resolve(reader.result.split(',')[1]);
-                                        reader.readAsDataURL(imageFile);
-                                    })
-                                }
-                            }
-                        ]
-                    });
-                } else {
-                    chatHistory.push({ role: "user", parts: [{ text: userPromptText }] });
-                }
-
-                const payload = {
-                    contents: chatHistory
-                };
-
-                try {
-                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${API_KEY}`;
-                    const response = await fetchWithExponentialBackoff(apiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-
-                    const result = await response.json();
-
-                    if (result.candidates && result.candidates.length > 0 &&
-                        result.candidates[0].content && result.candidates[0].content.parts &&
-                        result.candidates[0].content.parts.length > 0) {
-                        const botMessageText = result.candidates[0].content.parts[0].text;
-                        const newBotMessage = {
-                            id: uuidv4(),
-                            text: botMessageText,
-                            isUser: false,
-                            timestamp: new Date()
-                        };
-                        setMessages(prevMessages => [...prevMessages, newBotMessage]);
-                    } else {
-                        setError("Received an unexpected response from the AI. Please try again.");
-                    }
-                } catch (err) {
-                    setError(`Error generating response: ${err.message}`);
-                    console.error("API call failed:", err);
-                } finally {
-                    setIsAIGenerating(false);
-                }
-            };
-            
-            // Function to handle generating an image from a text prompt.
-            const handleGenerateImage = async () => {
-                if (!API_KEY) {
-                    setError("API key is missing.");
-                    return;
-                }
-                if (!input.trim() || isAIGenerating || isImageGenerating) {
-                    return;
-                }
-
-                setIsImageGenerating(true);
-                setError(null);
-
-                const userPrompt = input;
-                const newUserMessage = {
-                    id: uuidv4(),
-                    text: `Generating image for prompt: "${userPrompt}"`,
-                    isUser: true,
-                    timestamp: new Date()
-                };
-                setMessages(prevMessages => [...prevMessages, newUserMessage]);
-                setInput('');
-
-                const payload = {
-                    instances: { prompt: userPrompt },
-                    parameters: { "sampleCount": 1 }
-                };
                 
-                try {
-                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${API_KEY}`;
-                    const response = await fetchWithExponentialBackoff(apiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
+                // Simulate a delay for the AI response
+                setTimeout(() => {
+                    const aiText = mockAIReply(prompt, isCode);
+                    const aiMessage = {
+                        role: 'ai',
+                        content: aiText,
+                        isCode,
+                        timestamp: new Date().toISOString(),
+                    };
+                    setMessages(prevMessages => [...prevMessages, aiMessage]);
+                    setIsAIGenerating(false);
+                }, 1000); // 1 second delay
+            };
 
-                    const result = await response.json();
-                    
-                    if (result.predictions && result.predictions.length > 0 && result.predictions[0].bytesBase64Encoded) {
-                        const imageUrl = `data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`;
-                        const newBotMessage = {
-                            id: uuidv4(),
-                            image: imageUrl,
-                            text: `Image for prompt: "${userPrompt}"`,
-                            isUser: false,
-                            timestamp: new Date()
-                        };
-                        setMessages(prevMessages => [...prevMessages, newBotMessage]);
+            const getParsedMarkdown = (content, isCode) => {
+                if (window.marked) {
+                    const markdown = isCode ? '```javascript\n' + content + '\n```' : content;
+                    return window.marked.parse(markdown);
+                }
+                return isCode ? `<pre><code>${content}</code></pre>` : `<p>${content}</p>`;
+            };
+
+            const handleKeyDown = (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (isCodeMode) {
+                        handleSendMessage(input, true);
                     } else {
-                        setError("Image generation failed. Received an unexpected response from the AI.");
+                        handleSendMessage(input, false);
                     }
-                } catch (err) {
-                    setError(`Error generating image: ${err.message}`);
-                    console.error("Image API call failed:", err);
-                } finally {
-                    setIsImageGenerating(false);
                 }
             };
 
-            // Handle image file selection.
-            const handleImageUpload = (event) => {
-                const file = event.target.files[0];
-                if (file) {
-                    setImageFile(file);
-                    setImagePreviewUrl(URL.createObjectURL(file));
-                    setError(null);
-                }
+            const handleRefineWriting = () => {
+                handleSendMessage(input, false);
             };
 
-            // Handle key press in the input field to send a message on Enter.
-            const handleKeyPress = (event) => {
-                if (event.key === 'Enter') {
-                    sendMessage();
-                }
+            const handleExplainCode = () => {
+                handleSendMessage(input, true);
             };
 
             return (
-                <div className="flex flex-col h-screen bg-slate-900 text-white">
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4 md:p-6 lg:p-8">
-                        {/* Display the chat messages */}
-                        {messages.map((message) => (
-                            <div
-                                key={message.id}
-                                className={`flex items-start gap-3 ${
-                                    message.isUser ? 'justify-end' : 'justify-start'
-                                }`}
-                            >
-                                {/* Bot icon or user placeholder */}
-                                {!message.isUser && (
-                                    <div className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-full bg-blue-600">
-                                        <Bot size={16} />
-                                    </div>
-                                )}
-                                {/* Message content */}
-                                <div
-                                    className={`relative p-3 rounded-xl max-w-[70%] shadow-md transition-all duration-300 ${
-                                        message.isUser
-                                            ? 'bg-blue-600 text-white rounded-br-none'
-                                            : 'bg-slate-700 text-gray-200 rounded-bl-none'
-                                    }`}
-                                >
-                                    {message.text && (
-                                        <div className="prose dark:prose-invert">
-                                            <p className="text-sm">{message.text}</p>
-                                        </div>
-                                    )}
-                                    {message.image && (
-                                        <img src={message.image} alt="Generated" className="chat-message-image"/>
-                                    )}
-                                </div>
-                                {/* User placeholder or bot icon */}
-                                {message.isUser && (
-                                    <div className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-full bg-gray-500 text-white">
-                                        <span className="font-bold">U</span>
-                                    </div>
-                                )}
-                            </div>
-                        ))}
+                <div className="flex flex-col h-full bg-gray-900 rounded-lg shadow-2xl overflow-hidden max-w-4xl mx-auto">
+                    {/* Header */}
+                    <div className="flex items-center justify-between p-4 bg-gray-800 border-b border-gray-700">
+                        <div className="flex items-center space-x-2">
+                            <BotIcon className="text-indigo-400" size={28} />
+                            <h1 className="text-xl font-bold text-white">Madison AI (Offline)</h1>
+                        </div>
+                        <div className="text-xs text-gray-400">
+                            Status: Offline Mode
+                        </div>
+                    </div>
 
-                        {/* Display a loading indicator while the AI is generating a response */}
-                        {isAIGenerating && (
-                            <div className="flex items-start gap-3 justify-start">
-                                <div className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-full bg-blue-600">
-                                    <Bot size={16} />
-                                </div>
-                                <div className="p-3 rounded-xl bg-slate-700 text-gray-200 max-w-[70%] rounded-bl-none shadow-md">
-                                    <div className="flex items-center space-x-2">
-                                        <div className="dot-flashing"></div>
+                    {/* Chat Window */}
+                    <div className="flex-1 p-4 overflow-y-auto space-y-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+                        {messages.length === 0 && !isAIGenerating ? (
+                            <div className="text-center text-gray-500 py-10">
+                                <p>Start a conversation with Madison AI.</p>
+                                <p>This is the offline version. Your data is saved locally in your browser.</p>
+                            </div>
+                        ) : (
+                            messages.map((msg, index) => (
+                                <div
+                                    key={index}
+                                    className={`flex items-start space-x-3 ${msg.role === 'user' ? 'justify-end' : ''}`}
+                                >
+                                    {msg.role === 'ai' && <BotIcon className="flex-shrink-0 text-indigo-400 mt-1" />}
+                                    <div className={`relative p-3 rounded-xl max-w-[80%] ${msg.role === 'user'
+                                        ? 'bg-indigo-600 text-white rounded-br-none'
+                                        : 'bg-gray-700 text-gray-100 rounded-bl-none'
+                                        }`}>
+                                        <div
+                                            className="prose prose-sm prose-invert"
+                                            dangerouslySetInnerHTML={{ __html: getParsedMarkdown(msg.content, msg.isCode) }}
+                                        ></div>
                                     </div>
+                                    {msg.role === 'user' && <UserIcon className="flex-shrink-0 text-gray-400 mt-1" />}
+                                </div>
+                            ))
+                        )}
+                        {isAIGenerating && (
+                            <div className="flex items-start space-x-3">
+                                <BotIcon className="flex-shrink-0 text-indigo-400 mt-1" />
+                                <div className="p-3 bg-gray-700 rounded-xl rounded-bl-none">
+                                    <span className="text-sm">...Thinking...</span>
                                 </div>
                             </div>
                         )}
-                        {/* Display a loading indicator while the AI is generating an image */}
-                        {isImageGenerating && (
-                            <div className="flex items-start gap-3 justify-start">
-                                <div className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-full bg-blue-600">
-                                    <Bot size={16} />
-                                </div>
-                                <div className="p-3 rounded-xl bg-slate-700 text-gray-200 max-w-[70%] rounded-bl-none shadow-md">
-                                    <p className="text-sm">Generating your image, please wait...</p>
-                                </div>
-                            </div>
-                        )}
-                        {/* Error message display */}
-                        {error && (
-                            <div className="flex items-start justify-center text-center p-3 text-red-400 bg-red-900 rounded-xl max-w-full mx-auto shadow-md">
-                                <p>{error}</p>
-                            </div>
-                        )}
-                        {/* A ref to anchor the auto-scroll behavior */}
                         <div ref={messagesEndRef} />
                     </div>
 
-                    {/* Input area */}
-                    <div className="sticky bottom-0 bg-slate-900 p-4 border-t border-slate-700">
-                        {imagePreviewUrl && (
-                            <div className="relative mb-4 p-2 bg-slate-800 rounded-lg flex items-center justify-between">
-                                <img src={imagePreviewUrl} alt="Preview" className="h-16 rounded-lg object-cover" />
-                                <button
-                                    onClick={() => {
-                                        setImageFile(null);
-                                        setImagePreviewUrl(null);
-                                    }}
-                                    className="absolute -top-2 -right-2 p-1 bg-red-600 text-white rounded-full shadow-lg"
-                                >
-                                    <XCircle size={16} />
-                                </button>
-                            </div>
-                        )}
-                        <div className="relative flex items-center">
-                            <input
-                                type="text"
+                    {/* Input Area */}
+                    <div className="p-4 bg-gray-800 border-t border-gray-700">
+                        <div className="relative flex items-center bg-gray-700 rounded-full shadow-lg">
+                            <textarea
+                                ref={textareaRef}
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
-                                onKeyPress={handleKeyPress}
-                                placeholder="Type your message..."
-                                className="flex-grow rounded-full border border-slate-600 bg-slate-800 px-4 py-3 pr-28 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors placeholder-slate-400"
-                                disabled={isAIGenerating || isImageGenerating}
-                            />
+                                onKeyDown={handleKeyDown}
+                                className="w-full pl-6 pr-24 py-3 bg-transparent text-white placeholder-gray-400 rounded-full focus:outline-none resize-none overflow-hidden"
+                                placeholder={isCodeMode ? "Enter code to explain..." : "Refine your writing..."}
+                                rows={1}
+                            ></textarea>
                             <div className="absolute right-2 flex items-center space-x-2">
-                                {/* Image upload button */}
-                                <label className="p-3 bg-slate-700 text-white rounded-full shadow-lg hover:bg-slate-600 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-                                    <input
-                                        type="file"
-                                        accept="image/*"
-                                        onChange={handleImageUpload}
-                                        className="hidden"
-                                        disabled={isAIGenerating || isImageGenerating}
-                                    />
-                                    <ImageIcon size={20} />
-                                </label>
-                                {/* Generate image button */}
                                 <button
-                                    onClick={handleGenerateImage}
-                                    className="p-3 bg-amber-600 text-white rounded-full shadow-lg hover:bg-amber-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                    disabled={!input.trim() || isAIGenerating || isImageGenerating}
+                                    className="p-2 bg-gray-600 text-white rounded-full shadow-lg hover:bg-gray-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-1"
+                                    onClick={() => setIsCodeMode(!isCodeMode)}
                                 >
-                                    <Wand size={20} />
+                                    {isCodeMode ? (
+                                        <React.Fragment>
+                                            <FileTextIcon size={16} />
+                                            <span className="font-semibold">Writing Mode</span>
+                                        </React.Fragment>
+                                    ) : (
+                                        <React.Fragment>
+                                            <CodeIcon size={16} />
+                                            <span className="font-semibold">Code Mode</span>
+                                        </React.Fragment>
+                                    )}
                                 </button>
-                                {/* Send message button */}
-                                <button
-                                    onClick={sendMessage}
-                                    className="p-3 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                    disabled={(!input.trim() && !imageFile) || isAIGenerating || isImageGenerating}
-                                >
-                                    <Send size={20} />
-                                </button>
+                                {isCodeMode ? (
+                                    <button
+                                        className="p-2 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-1"
+                                        onClick={handleExplainCode}
+                                        disabled={isAIGenerating || !input.trim()}
+                                    >
+                                        <CodeIcon size={16} />
+                                        <span className="font-semibold">✨ Explain Code</span>
+                                    </button>
+                                ) : (
+                                    <button
+                                        className="p-2 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-1"
+                                        onClick={handleRefineWriting}
+                                        disabled={isAIGenerating || !input.trim()}
+                                    >
+                                        <WandIcon size={16} />
+                                        <span className="font-semibold">✨ Refine Writing</span>
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>
                 </div>
             );
-        }
-        // Render the App component
-        const domNode = document.getElementById('root');
-        const root = ReactDOM.createRoot(domNode);
-        root.render(
-            <React.StrictMode>
-                <App />
-            </React.StrictMode>
-        );
+        };
+
+        ReactDOM.render(React.createElement(App, null), document.getElementById('root'));
     </script>
 </body>
 </html>
