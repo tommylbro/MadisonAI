@@ -308,8 +308,11 @@
 
         async function initFirebaseAndListen() {
             try {
-                // The canvas environment provides the Firebase config, so we can assume it exists.
-                // We'll proceed with initialization regardless of the `typeof` check to be more robust.
+                // If firebaseConfig is not available, we can't initialize the app.
+                if (!firebaseConfig) {
+                    throw new Error("Firebase configuration is missing.");
+                }
+
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
