@@ -172,7 +172,15 @@
         
         // Global variables from the canvas environment
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        // Provide a default empty object to avoid initialization errors
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "AIzaSyCBBfnCqQlfrOCmSPzNuyC8F4jT0OHUX7g",
+            authDomain: "ai-chatbot-88602",
+            projectId: "167580287666",
+            storageBucket: "ai-chatbot-88602",
+            messagingSenderId: "ai-chatbot-88602",
+            appId: "1:167580287666:android:b057a4176a46729ad47fab"
+        };
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
         const apiKey = "AIzaSyCBBfnCqQlfrOCmSPzNuyC8F4jT0OHUX7g"; // Leave as-is for the canvas environment to provide
 
@@ -308,8 +316,9 @@
 
         async function initFirebaseAndListen() {
             try {
-                // If firebaseConfig is not available, we can't initialize the app.
-                if (!firebaseConfig) {
+                // If firebaseConfig is not a valid object, we can't initialize the app.
+                // We'll provide a dummy object to prevent a crash, but the app won't be functional.
+                if (!firebaseConfig.projectId || !firebaseConfig.apiKey) {
                     throw new Error("Firebase configuration is missing.");
                 }
 
