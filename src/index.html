@@ -63,7 +63,6 @@
                     </svg>
                 </button>
             </div>
-            <!-- FIX: Added 'custom-scrollbar' class to the code-content div. -->
             <div class="flex-grow overflow-y-auto custom-scrollbar bg-gray-900 rounded-lg p-2 font-mono text-sm">
                 <pre id="code-content" class="whitespace-pre-wrap"><code></code></pre>
                 <div id="preview-content" class="hidden"></div>
@@ -168,7 +167,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // Use a library for markdown parsing and HTML sanitization
         import { marked } from "https://cdn.jsdelivr.net/npm/marked/lib/marked.esm.js";
@@ -177,6 +176,8 @@
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // Correctly get the API key from the environment
+        const apiKey = typeof __api_key !== 'undefined' ? __api_key : '';
 
         // UI elements
         const statusIndicator = document.getElementById('status-indicator');
@@ -208,13 +209,8 @@
         let isAIGenerating = false;
         let extractedCode = { content: '', language: '' };
         
-        // --- API Key Check ---
-        const apiKey = "AIzaSyCBBfnCqQlfrOCmSPzNuyC8F4jT0OHUX7g";
+        // Check if the API key is available
         const isApiKeyAvailable = !!apiKey;
-        // The API Key is not available in this environment.
-        if (!isApiKeyAvailable) {
-            console.warn("API key for Gemini is not available. AI features will be disabled.");
-        }
 
         // Audio-related state for the instrument tuner
         let audioContext = null;
@@ -260,8 +256,6 @@
             return { content: '', language: '' };
         }
         
-        // The parameter 'codeContent' was shadowing the global variable.
-        // We now use the global 'codeContent' element directly and pass the code string as 'codeString'.
         function handleOpenCodeSidebar(codeString, codeLanguage) {
             extractedCode = { content: codeString, language: codeLanguage };
             
@@ -289,21 +283,12 @@
             extractedCode = { content: '', language: '' };
         }
         
-        // Function to create and append a new message to the chat
-        function createAndAppendMessage(role, text) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `p-4 rounded-xl shadow-md max-w-lg relative ${role === 'user' ? 'bg-gray-700 self-end ml-auto' : 'bg-indigo-700 self-start mr-auto'}`;
-            messageDiv.innerHTML = renderMarkdown(text);
-            messagesContainer.appendChild(messageDiv);
-            scrollToBottom();
-        }
-
         // --- Firebase Initialization and Data Fetching ---
         window.addEventListener('load', async () => {
             try {
-                // FIX: Added a check to see if firebaseConfig is present before initializing. If not, use dummy data.
+                // If firebase config is not available, we can't connect to Firestore.
                 if (!firebaseConfig || !firebaseConfig.apiKey) {
-                    console.log("Firebase configuration is missing. Running in standalone mode.");
+                    console.log("Firebase configuration is missing. Running in offline mode.");
                     statusIndicator.textContent = 'Offline';
                     statusIndicator.classList.remove('bg-red-500');
                     statusIndicator.classList.add('bg-gray-500');
@@ -311,13 +296,12 @@
                     sendBtn.disabled = false;
                     isAuthReady = true;
 
-                    // Mock message data for offline use
+                    // Display a mock message since we can't fetch from Firestore
                     const mockMessages = [
                         { role: 'user', text: 'Hey, can you help me with a melody?', timestamp: new Date() },
                         { role: 'assistant', text: 'Sure, I can help you with that! How about we start with a simple C major chord progression?', timestamp: new Date() }
                     ];
 
-                    // Render mock messages
                     messagesContainer.innerHTML = ''; 
                     mockMessages.forEach(msg => {
                         const messageDiv = document.createElement('div');
@@ -326,6 +310,17 @@
                         messagesContainer.appendChild(messageDiv);
                     });
                     scrollToBottom();
+                    
+                    if (!isApiKeyAvailable) {
+                        statusIndicator.textContent = 'Offline - AI Disabled';
+                        statusIndicator.classList.remove('bg-green-500', 'bg-red-500');
+                        statusIndicator.classList.add('bg-gray-500');
+                        chatInput.disabled = true;
+                        sendBtn.disabled = true;
+                        showMessageBox("AI features are disabled due to missing configuration.", true);
+                    } else {
+                        statusIndicator.textContent = 'Offline';
+                    }
                     
                     return; // Exit the function to prevent further Firebase-related errors
                 }
@@ -338,11 +333,18 @@
                     if (user) {
                         userId = user.uid;
                         isAuthReady = true;
-                        statusIndicator.textContent = 'Online Mode';
-                        statusIndicator.classList.remove('bg-red-500');
-                        statusIndicator.classList.add('bg-green-500');
-                        chatInput.disabled = false;
-                        sendBtn.disabled = false;
+                        if(isApiKeyAvailable) {
+                            statusIndicator.textContent = 'Online Mode';
+                            statusIndicator.classList.remove('bg-red-500');
+                            statusIndicator.classList.add('bg-green-500');
+                            chatInput.disabled = false;
+                            sendBtn.disabled = false;
+                        } else {
+                            statusIndicator.textContent = 'Online - AI Disabled';
+                            statusIndicator.classList.remove('bg-red-500');
+                            statusIndicator.classList.add('bg-yellow-500');
+                            showMessageBox("AI features are disabled due to missing configuration.", false);
+                        }
                         
                         const userChatsCollection = collection(db, `artifacts/${appId}/users/${userId}/chats`);
                         
@@ -356,6 +358,7 @@
                                 fetchedMessages.push(data);
                             });
 
+                            // Sort messages by timestamp
                             fetchedMessages.sort((a, b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0));
 
                             fetchedMessages.forEach(msg => {
@@ -374,7 +377,6 @@
                                             <polyline points="8 6 2 12 8 18" />
                                         </svg>
                                     `;
-                                    // We now pass the code block content and language to the function.
                                     codeBtn.onclick = () => handleOpenCodeSidebar(codeBlock.content, codeBlock.language);
                                     messageDiv.appendChild(codeBtn);
                                 }
@@ -543,14 +545,14 @@
             chatInput.disabled = true;
             sendBtn.disabled = true;
             
-            // FIX: If in offline mode, display the message immediately without trying to save to DB
-            if (!db) {
+            // If the API key is not available, we can't send messages to the AI.
+            if (!isApiKeyAvailable) {
                 createAndAppendMessage('user', prompt);
-                showMessageBox("AI features are disabled. Missing API key.");
+                showMessageBox("AI features are disabled due to missing configuration.", true);
                 isAIGenerating = false;
                 chatInput.disabled = false;
                 sendBtn.disabled = false;
-                chatInput.value = ''; // Clear the input field
+                chatInput.value = '';
                 return;
             }
 
@@ -561,30 +563,18 @@
                 type: type,
             };
 
-            // Only add to Firestore if `db` is available
-            if (db) {
-                try {
-                    await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chats`), newUserMessage);
-                } catch (e) {
-                    console.error("Error adding user message to Firestore:", e);
-                    showMessageBox("Could not save your message. Please try again.");
-                }
+            // Add the user message to Firestore
+            try {
+                await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chats`), newUserMessage);
+            } catch (e) {
+                console.error("Error adding user message to Firestore:", e);
+                showMessageBox("Could not save your message. Please try again.");
             }
 
             chatInput.value = '';
 
             const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
             
-            // FIX: Added a check for API key before making the fetch call.
-            if (!isApiKeyAvailable) {
-                console.error("API key is not available. Cannot send request to AI.");
-                showMessageBox("AI features are disabled. Missing API key.");
-                isAIGenerating = false;
-                chatInput.disabled = false;
-                sendBtn.disabled = false;
-                return;
-            }
-
             try {
                 const fetchWithRetry = async (url, options, retries = 3, delay = 1000) => {
                     try {
@@ -595,6 +585,7 @@
                         return response;
                     } catch (error) {
                         if (retries > 0) {
+                            console.log(`Retrying API call... Retries left: ${retries}`);
                             await new Promise(res => setTimeout(res, delay));
                             return fetchWithRetry(url, options, retries - 1, delay * 2);
                         } else {
@@ -629,15 +620,7 @@
                         type: type,
                     };
                     
-                    // Only add to Firestore if `db` is available
-                    if (db) {
-                        try {
-                            await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chats`), newAIMessage);
-                        } catch (e) {
-                            console.error("Error adding AI message:", e);
-                            showMessageBox("Could not save AI response. Please try again.");
-                        }
-                    }
+                    await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chats`), newAIMessage);
                 } else {
                     console.error("Unexpected API response format:", result);
                     showMessageBox("AI response failed. Please try again.");
@@ -719,6 +702,5 @@
         closeSidebarBtn.addEventListener('click', handleCloseCodeSidebar);
         
     </script>
-
 </body>
 </html>
