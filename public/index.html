@@ -3,30 +3,48 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Madison AI (Offline)</title>
-    <!-- Embedded Tailwind CSS -->
-    <script>
-        // Minified Tailwind CSS library
-        // This makes the app self-contained and ready for offline use.
-        window.tailwind = {
-            content: [],
-            theme: {
-                extend: {},
-            },
-            plugins: [],
+    <title>Madison AI (Hybrid)</title>
+    <!-- Tailwind CSS CDN for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- React and ReactDOM CDNs -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <!-- Third-party library for markdown rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.0.10/marked.min.js"></script>
+
+    <!-- Babel Standalone for JSX compilation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
+
+    <!-- Firebase CDNs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables provided by the Canvas environment.
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        window.firebase = {
+            initializeApp,
+            getAuth,
+            signInWithCustomToken,
+            signInAnonymously,
+            onAuthStateChanged,
+            getFirestore,
+            collection,
+            onSnapshot,
+            addDoc,
+            serverTimestamp,
+            query,
+            appId,
+            firebaseConfig,
+            initialAuthToken,
         };
     </script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Embedded React and ReactDOM CDNs -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    
-    <!-- Embedded Third-party library for markdown rendering -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.0.10/marked.min.js"></script>
-    
-    <!-- Embedded Babel Standalone for JSX compilation -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -49,18 +67,89 @@
         .prose-sm code {
             font-size: 0.8rem;
         }
-        /* No dot-flashing since there's no real AI waiting */
+        .dot-flashing {
+            position: relative;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #94a3b8;
+            color: #94a3b8;
+            animation: dotFlashing 1s infinite linear alternate;
+            animation-delay: 0.5s;
+        }
+
+        .dot-flashing::before, .dot-flashing::after {
+            content: '';
+            display: inline-block;
+            position: absolute;
+            top: 0;
+        }
+
+        .dot-flashing::before {
+            left: -12px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #94a3b8;
+            color: #94a3b8;
+            animation: dotFlashing 1s infinite alternate;
+            animation-delay: 0s;
+        }
+
+        .dot-flashing::after {
+            left: 12px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #94a3b8;
+            color: #94a3b8;
+            animation: dotFlashing 1s infinite alternate;
+            animation-delay: 1s;
+        }
+
+        @keyframes dotFlashing {
+            0% {
+                background-color: #94a3b8;
+            }
+            50%,
+            100% {
+                background-color: #e2e8f0;
+            }
+        }
+        .pulse {
+            animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        @keyframes pulse-ring {
+            0% {
+                transform: scale(0.33);
+            }
+            80%, 100% {
+                opacity: 0;
+            }
+        }
+        .tuner-needle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 2px;
+            height: 80%;
+            background: #e2e8f0;
+            transform-origin: bottom center;
+            transition: transform 0.1s ease-out;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-100 flex items-center justify-center min-h-screen p-4">
     <div id="root" class="w-full h-full max-w-4xl"></div>
     <script type="text/babel">
-        // This is the offline version. It uses localStorage instead of Firestore and a mock AI.
-
         const { useState, useEffect, useRef } = React;
         const ReactDOM = window.ReactDOM;
 
-        // Custom Icon Components
+        const firebase = window.firebase;
+        const { initializeApp, getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, getFirestore, collection, onSnapshot, addDoc, serverTimestamp, query } = firebase;
+
+        // --- Custom Icon Components (Lucide-react icons converted to SVG for self-contained code) ---
         const BotIcon = ({ size = 24, className = "" }) => (
             React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: className },
                 React.createElement('path', { d: "M12 8V4H8" }),
@@ -108,20 +197,118 @@
             )
         );
 
-        // --- MOCK AI FUNCTIONALITY ---
-        // This function simulates an AI response without an internet connection.
+        const WifiIcon = ({ size = 24, className = "" }) => (
+            React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: className },
+                React.createElement('path', { d: "M12 20h.01" }),
+                React.createElement('path', { d: "M8.8 16a3.5 3.5 0 0 1 6.4 0" }),
+                React.createElement('path', { d: "M5.2 12a7.5 7.5 0 0 1 13.6 0" }),
+                React.createElement('path', { d: "M1.6 8a11.5 11.5 0 0 1 20.8 0" })
+            )
+        );
+
+        const WifiOffIcon = ({ size = 24, className = "" }) => (
+            React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: className },
+                React.createElement('path', { d: "M12.5 16.5a3.5 3.5 0 0 0-5 0" }),
+                React.createElement('path', { d: "M2 8.82a11.41 11.41 0 0 1 1.83-2.19" }),
+                React.createElement('path', { d: "M1.64 15.34a7.5 7.5 0 0 1 10.02-9.75" }),
+                React.createElement('path', { d: "M20 8.82a11.41 11.41 0 0 0-1.83-2.19" }),
+                React.createElement('path', { d: "M12.5 10.5a7.5 7.5 0 0 0 6.61-4.71" }),
+                React.createElement('line', { x1: "2", x2: "22", y1: "2", y2: "22" })
+            )
+        );
+
+        const MusicIcon = ({ size = 24, className = "" }) => (
+            React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: className },
+                React.createElement('path', { d: "M9 18V5l12-2v13" }),
+                React.createElement('circle', { cx: "6", cy: "18", r: "3" }),
+                React.createElement('circle', { cx: "18", cy: "16", r: "3" })
+            )
+        );
+
+        const MicIcon = ({ size = 24, className = "" }) => (
+            React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: className },
+                React.createElement('path', { d: "M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" }),
+                React.createElement('path', { d: "M19 10v2a7 7 0 0 1-14 0v-2" }),
+                React.createElement('line', { x1: "12", x2: "12", y1: "19", y2: "22" })
+            )
+        );
+
+        const PauseIcon = ({ size = 24, className = "" }) => (
+            React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: className },
+                React.createElement('rect', { width: "4", height: "16", x: "6", y: "4" }),
+                React.createElement('rect', { width: "4", height: "16", x: "14", y: "4" })
+            )
+        );
+        const PlayIcon = ({ size = 24, className = "" }) => (
+            React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: className },
+                React.createElement('polygon', { points: "5 3 19 12 5 21 5 3" })
+            )
+        );
+        const GuitarIcon = ({ size = 24, className = "" }) => (
+            React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: className },
+                React.createElement('path', { d: "M8 12l-5 5 5 5 5-5-5-5z" }),
+                React.createElement('path', { d: "M15 18l-5-5-5 5-5-5z" })
+            )
+        );
+
+        // --- MOCK AI FUNCTIONALITY (for offline mode) ---
         const mockAIReply = (prompt, isCode) => {
+            const lowerPrompt = prompt.toLowerCase();
             if (isCode) {
-                return `The code you provided is a fascinating example of how a programmer might try to solve a problem. It's well-structured and uses common patterns.`;
-            } else if (prompt.toLowerCase().includes("hello")) {
-                return "Hello! I am an offline AI assistant. I can help with simple tasks and save our conversation locally.";
-            } else if (prompt.toLowerCase().includes("how are you")) {
-                return "I'm a computer program, so I'm doing great! How can I assist you?";
-            } else if (prompt.toLowerCase().includes("name")) {
-                return "My name is Madison AI (Offline Edition).";
+                if (lowerPrompt.includes("hello world")) {
+                    return `// Simple "Hello, World!" in JavaScript
+function sayHello() {
+    console.log("Hello, World!");
+}
+
+sayHello();`;
+                } else if (lowerPrompt.includes("loop")) {
+                    return `// A basic for loop in JavaScript
+for (let i = 0; i < 5; i++) {
+    console.log("This is loop number " + i);
+}`;
+                } else if (lowerPrompt.includes("function")) {
+                    return `// A simple function that adds two numbers
+function add(a, b) {
+    return a + b;
+}
+
+const result = add(5, 3);
+console.log("The result is: " + result);`;
+                } else if (lowerPrompt.includes("react component")) {
+                    return `// A simple functional React component
+function Greeting({ name }) {
+    return <h1>Hello, {name}!</h1>;
+}
+
+export default Greeting;`;
+                } else {
+                    return `I'm sorry, I am currently offline and can only provide simple code examples based on keywords like "hello world", "loop", "function", or "react component".`;
+                }
+            } else if (lowerPrompt.includes("hello") || lowerPrompt.includes("hi")) {
+                return "Hello there! I am an AI assistant. I can help with some simple tasks and save our conversation.";
+            } else if (lowerPrompt.includes("how are you")) {
+                return "I'm a computer program, so I'm doing great! How can I assist you today?";
+            } else if (lowerPrompt.includes("name")) {
+                return "My name is Madison AI. I'm currently operating in a hybrid mode, using my offline capabilities when a connection isn't available.";
             } else {
-                return "I'm sorry, I'm an offline-only model and my capabilities are limited to a few pre-defined responses. I can't generate new content like my online counterpart.";
+                return "I'm sorry, I am currently offline, so my capabilities are limited to a few pre-defined responses.";
             }
+        };
+
+        // --- Tuner Logic ---
+        const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+        const getNoteAndCents = (frequency) => {
+            if (frequency < 20) { // Filter out low frequencies
+                return { note: '-', cents: 0 };
+            }
+            const A4 = 440;
+            const A4_INDEX = 57; // MIDI note number for A4
+            const midiNote = 12 * (Math.log(frequency / A4) / Math.log(2)) + A4_INDEX;
+            const noteIndex = Math.round(midiNote) % 12;
+            const cents = Math.round(1200 * Math.log(frequency / (A4 * Math.pow(2, (Math.round(midiNote) - A4_INDEX) / 12))) / Math.log(2));
+
+            return { note: noteNames[noteIndex], cents: cents };
         };
 
         const App = () => {
@@ -129,27 +316,100 @@
             const [messages, setMessages] = useState([]);
             const [isAIGenerating, setIsAIGenerating] = useState(false);
             const [isCodeMode, setIsCodeMode] = useState(false);
+            const [isMusicMode, setIsMusicMode] = useState(false);
+            const [isOnline, setIsOnline] = useState(navigator.onLine);
+            const [isAuthReady, setIsAuthReady] = useState(false);
+            const [firestoreError, setFirestoreError] = useState(null);
             const messagesEndRef = useRef(null);
             const textareaRef = useRef(null);
-            
-            // This useEffect handles loading/saving chat history to localStorage.
+            const db = useRef(null);
+            const auth = useRef(null);
+            const [micError, setMicError] = useState(null);
+
+            // --- New state for music features ---
+            const [isRecording, setIsRecording] = useState(false);
+            const [audioChunks, setAudioChunks] = useState([]);
+            const [audioBlob, setAudioBlob] = useState(null);
+            const [lyrics, setLyrics] = useState('');
+            const mediaRecorderRef = useRef(null);
+
+            // --- Tuner state and refs ---
+            const [tunerStatus, setTunerStatus] = useState('off'); // 'off', 'listening'
+            const [detectedFrequency, setDetectedFrequency] = useState(null);
+            const [detectedNote, setDetectedNote] = useState({ note: '--', cents: 0 });
+            const audioContextRef = useRef(null);
+            const analyserNodeRef = useRef(null);
+            const microphoneStreamRef = useRef(null);
+            const animationFrameRef = useRef(null);
+
+
             useEffect(() => {
-                const savedMessages = localStorage.getItem('madison-offline-messages');
-                if (savedMessages) {
-                    try {
-                        const parsedMessages = JSON.parse(savedMessages);
-                        setMessages(parsedMessages);
-                    } catch (error) {
-                        console.error("Failed to parse messages from localStorage:", error);
-                    }
+                const handleOnlineStatus = () => setIsOnline(navigator.onLine);
+                window.addEventListener('online', handleOnlineStatus);
+                window.addEventListener('offline', handleOnlineStatus);
+
+                // Initialize Firebase
+                try {
+                    const app = initializeApp(firebase.firebaseConfig);
+                    auth.current = getAuth(app);
+                    db.current = getFirestore(app);
+
+                    onAuthStateChanged(auth.current, (user) => {
+                        if (user) {
+                            setIsAuthReady(true);
+                            console.log("User authenticated:", user.uid);
+                        } else {
+                            if (firebase.initialAuthToken) {
+                                signInWithCustomToken(auth.current, firebase.initialAuthToken)
+                                    .then(() => console.log("Signed in with custom token"))
+                                    .catch(e => {
+                                        console.error("Firebase Auth Error:", e);
+                                        setFirestoreError(e.message);
+                                    });
+                            } else {
+                                signInAnonymously(auth.current)
+                                    .then(() => console.log("Signed in anonymously"))
+                                    .catch(e => {
+                                        console.error("Firebase Auth Error:", e);
+                                        setFirestoreError(e.message);
+                                    });
+                            }
+                        }
+                    });
+                } catch (e) {
+                    console.error("Firebase initialization error:", e);
+                    setFirestoreError(e.message);
                 }
+
+                return () => {
+                    window.removeEventListener('online', handleOnlineStatus);
+                    window.removeEventListener('offline', handleOnlineStatus);
+                    // Cleanup on unmount
+                    if (tunerStatus !== 'off') {
+                        stopTuner();
+                    }
+                };
             }, []);
 
-            // This useEffect saves messages to localStorage whenever they change.
             useEffect(() => {
-                if (messages.length > 0) {
-                    localStorage.setItem('madison-offline-messages', JSON.stringify(messages));
+                if (!db.current || !isAuthReady) {
+                    return;
                 }
+                const messagesCol = collection(db.current, `artifacts/${firebase.appId}/users/${auth.current.currentUser.uid}/messages`);
+                const q = query(messagesCol);
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const messagesData = snapshot.docs
+                        .map(doc => ({ id: doc.id, ...doc.data() }))
+                        .sort((a, b) => (a.timestamp && a.timestamp.seconds ? a.timestamp.seconds : 0) - (b.timestamp && b.timestamp.seconds ? b.timestamp.seconds : 0));
+                    setMessages(messagesData);
+                }, (error) => {
+                    console.error("Firestore Error:", error);
+                    setFirestoreError(error.message);
+                });
+                return () => unsubscribe();
+            }, [isAuthReady]);
+
+            useEffect(() => {
                 if (messagesEndRef.current) {
                     messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
                 }
@@ -163,33 +423,207 @@
                 }
             }, [input]);
 
-            const handleSendMessage = (prompt, isCode = false) => {
-                if (!prompt.trim()) return;
+            // --- Audio Recorder Handlers ---
+            const startRecording = async () => {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorderRef.current = new MediaRecorder(stream);
+                    mediaRecorderRef.current.ondataavailable = (e) => {
+                        setAudioChunks((prev) => [...prev, e.data]);
+                    };
+                    mediaRecorderRef.current.onstop = () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        setAudioBlob(audioBlob);
+                        setAudioChunks([]);
+                    };
+                    mediaRecorderRef.current.start();
+                    setIsRecording(true);
+                    setMicError(null);
+                } catch (err) {
+                    if (err.name === 'NotFoundError') {
+                        console.warn("Warning: No microphone found. The user will be notified.");
+                    } else {
+                        console.error("Error accessing microphone:", err);
+                    }
+                    setMicError("No microphone found. Please connect a microphone and ensure your browser has permission to access it.");
+                    setIsRecording(false);
+                }
+            };
 
-                // Add user message to state immediately for responsiveness
+            const stopRecording = () => {
+                if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                    mediaRecorderRef.current.stop();
+                    setIsRecording(false);
+                }
+            };
+
+            const playRecording = () => {
+                if (audioBlob) {
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    const audio = new Audio(audioUrl);
+                    audio.play();
+                }
+            };
+
+            // --- Tuner Handlers ---
+            // New, more robust pitch detection using autocorrelation.
+            const detectPitch = () => {
+                if (!analyserNodeRef.current || tunerStatus !== 'listening') {
+                    return;
+                }
+                const bufferLength = analyserNodeRef.current.fftSize;
+                const dataArray = new Float32Array(bufferLength);
+                analyserNodeRef.current.getFloatTimeDomainData(dataArray);
+
+                let autoCorrelate = (buffer, sampleRate) => {
+                    // Normalize the audio data
+                    let normalizedData = new Float32Array(buffer.length);
+                    let maxVal = 0;
+                    for (let i = 0; i < buffer.length; i++) {
+                        if (Math.abs(buffer[i]) > maxVal) {
+                            maxVal = Math.abs(buffer[i]);
+                        }
+                    }
+                    if (maxVal === 0) return -1;
+                    for (let i = 0; i < buffer.length; i++) {
+                        normalizedData[i] = buffer[i] / maxVal;
+                    }
+
+                    // Simple autocorrelation
+                    let bestOffset = -1;
+                    let bestCorrelation = -1;
+                    for (let offset = 1; offset < normalizedData.length / 2; offset++) {
+                        let correlation = 0;
+                        for (let i = 0; i < normalizedData.length - offset; i++) {
+                            correlation += normalizedData[i] * normalizedData[i + offset];
+                        }
+                        if (correlation > bestCorrelation) {
+                            bestCorrelation = correlation;
+                            bestOffset = offset;
+                        }
+                    }
+                    if (bestCorrelation > 0.9) { // Threshold to prevent false positives
+                        return sampleRate / bestOffset;
+                    }
+                    return -1;
+                };
+
+                const pitch = autoCorrelate(dataArray, audioContextRef.current.sampleRate);
+                if (pitch > 0) {
+                    setDetectedFrequency(pitch.toFixed(2));
+                    setDetectedNote(getNoteAndCents(pitch));
+                } else {
+                    setDetectedFrequency(null);
+                    setDetectedNote({ note: '--', cents: 0 });
+                }
+
+                animationFrameRef.current = requestAnimationFrame(detectPitch);
+            };
+
+            const startTuner = async () => {
+                if (tunerStatus === 'listening') {
+                    return;
+                }
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+                    analyserNodeRef.current = audioContextRef.current.createAnalyser();
+                    microphoneStreamRef.current = audioContextRef.current.createMediaStreamSource(stream);
+
+                    microphoneStreamRef.current.connect(analyserNodeRef.current);
+
+                    setTunerStatus('listening');
+                    setMicError(null);
+                    animationFrameRef.current = requestAnimationFrame(detectPitch);
+                } catch (err) {
+                    if (err.name === 'NotFoundError') {
+                        console.warn('Warning: No microphone found for tuner. The user will be notified.');
+                    } else {
+                        console.error('Error accessing microphone for tuner:', err);
+                    }
+                    setMicError('No microphone found. Please connect a microphone and ensure your browser has permission to access it.');
+                    setTunerStatus('off');
+                }
+            };
+
+            const stopTuner = () => {
+                if (animationFrameRef.current) {
+                    cancelAnimationFrame(animationFrameRef.current);
+                }
+                if (microphoneStreamRef.current && microphoneStreamRef.current.mediaStream) {
+                    microphoneStreamRef.current.mediaStream.getTracks().forEach(track => track.stop());
+                }
+                if (audioContextRef.current) {
+                    audioContextRef.current.close();
+                }
+                setTunerStatus('off');
+                setDetectedFrequency(null);
+                setDetectedNote({ note: '--', cents: 0 });
+            };
+
+            const callOnlineAI = async (prompt, isCode) => {
+                const promptText = isCode
+                    ? `Generate a code snippet in any language for the following request:\n\n${prompt}`
+                    : `Refine and improve the following text:\n\n${prompt}`;
+
+                let chatHistory = [];
+                chatHistory.push({ role: "user", parts: [{ text: promptText }] });
+                const payload = { contents: chatHistory };
+                const apiKey = ""
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const result = await response.json();
+
+                    if (result.candidates && result.candidates.length > 0 &&
+                        result.candidates[0].content && result.candidates[0].content.parts &&
+                        result.candidates[0].content.parts.length > 0) {
+                        return result.candidates[0].content.parts[0].text;
+                    } else {
+                        return "I'm sorry, I couldn't generate a response. The AI might be unavailable.";
+                    }
+                } catch (error) {
+                    console.error("API call failed:", error);
+                    return "I'm having trouble connecting to the AI. Please check your internet connection.";
+                }
+            };
+
+            const handleSendMessage = async (prompt, isCode = false) => {
+                if (!prompt.trim() || isAIGenerating || !isAuthReady) return;
+
                 const newUserMessage = {
                     role: 'user',
                     content: prompt,
                     isCode,
-                    timestamp: new Date().toISOString(),
+                    timestamp: serverTimestamp(),
                 };
 
-                setMessages(prevMessages => [...prevMessages, newUserMessage]);
+                const messagesCol = collection(db.current, `artifacts/${firebase.appId}/users/${auth.current.currentUser.uid}/messages`);
+                await addDoc(messagesCol, newUserMessage);
                 setInput('');
                 setIsAIGenerating(true);
-                
-                // Simulate a delay for the AI response
-                setTimeout(() => {
-                    const aiText = mockAIReply(prompt, isCode);
-                    const aiMessage = {
-                        role: 'ai',
-                        content: aiText,
-                        isCode,
-                        timestamp: new Date().toISOString(),
-                    };
-                    setMessages(prevMessages => [...prevMessages, aiMessage]);
-                    setIsAIGenerating(false);
-                }, 1000); // 1 second delay
+
+                let aiText;
+                if (isOnline) {
+                    aiText = await callOnlineAI(prompt, isCode);
+                } else {
+                    aiText = mockAIReply(prompt, isCode);
+                }
+
+                const aiMessage = {
+                    role: 'ai',
+                    content: aiText,
+                    isCode,
+                    timestamp: serverTimestamp(),
+                };
+
+                await addDoc(messagesCol, aiMessage);
+                setIsAIGenerating(false);
             };
 
             const getParsedMarkdown = (content, isCode) => {
@@ -204,9 +638,9 @@
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     if (isCodeMode) {
-                        handleSendMessage(input, true);
+                        handleExplainCode();
                     } else {
-                        handleSendMessage(input, false);
+                        handleRefineWriting();
                     }
                 }
             };
@@ -219,107 +653,220 @@
                 handleSendMessage(input, true);
             };
 
+            const handleSwitchMode = (mode) => {
+                if (tunerStatus !== 'off') {
+                    stopTuner();
+                }
+                setIsCodeMode(mode === 'code');
+                setIsMusicMode(mode === 'music');
+            }
+
+            const renderMainContent = () => {
+                if (isMusicMode) {
+                    return (
+                        <div className="flex flex-col h-full space-y-4">
+                            <div className="flex items-center space-x-2">
+                                <MusicIcon className="text-indigo-400" size={28} />
+                                <h2 className="text-xl font-bold text-white">Music Studio</h2>
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-4 bg-gray-800 rounded-lg shadow-inner">
+                                <p className="text-gray-400 mb-4">Record your ideas, write your lyrics, or tune an instrument.</p>
+
+                                {micError && (
+                                    <div className="bg-red-900 text-red-300 p-3 rounded-lg mb-4 text-sm font-semibold">
+                                        {micError}
+                                    </div>
+                                )}
+                                {/* Recorder controls */}
+                                <div className="flex items-center space-x-4 mb-6">
+                                    <button
+                                        onClick={isRecording ? stopRecording : startRecording}
+                                        className={`relative w-16 h-16 rounded-full flex items-center justify-center transition-colors ${isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-600 hover:bg-gray-500'}`}
+                                        disabled={tunerStatus === 'listening' || micError}
+                                    >
+                                        {isRecording && <span className="absolute animate-ping opacity-75 w-full h-full rounded-full bg-red-500"></span>}
+                                        <MicIcon size={32} className={`z-10 ${isRecording ? 'text-white' : 'text-gray-200'}`} />
+                                    </button>
+                                    {audioBlob && (
+                                        <button
+                                            onClick={playRecording}
+                                            className="p-3 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-colors"
+                                        >
+                                            <PlayIcon size={20} />
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Lyrics/Notes textarea */}
+                                <textarea
+                                    value={lyrics}
+                                    onChange={(e) => setLyrics(e.target.value)}
+                                    placeholder="Write your song lyrics or musical ideas here..."
+                                    className="w-full h-48 p-4 bg-gray-700 text-gray-100 rounded-lg focus:outline-none resize-none placeholder-gray-400"
+                                ></textarea>
+
+                                {/* Instrument Tuner */}
+                                <div className="mt-8 p-4 bg-gray-700 rounded-lg text-center">
+                                    <h3 className="text-lg font-semibold text-white mb-2">Instrument Tuner</h3>
+                                    <div className="flex items-center justify-center space-x-2 mb-4">
+                                        <button
+                                            onClick={tunerStatus === 'listening' ? stopTuner : startTuner}
+                                            className={`p-3 rounded-full shadow-lg transition-colors flex items-center gap-2 font-medium ${tunerStatus === 'listening' ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'}`}
+                                            disabled={isRecording || micError}
+                                        >
+                                            <GuitarIcon size={20} />
+                                            {tunerStatus === 'listening' ? 'Stop Tuner' : 'Start Tuner'}
+                                        </button>
+                                    </div>
+                                    <div className="w-full max-w-sm mx-auto h-24 bg-gray-600 rounded-lg relative flex items-center justify-center flex-col overflow-hidden">
+                                        <div className="absolute top-0 w-full h-full flex justify-between">
+                                            <div className="w-1/4 h-full bg-red-500 opacity-20"></div>
+                                            <div className="w-1/4 h-full bg-yellow-500 opacity-20"></div>
+                                            <div className="w-1/4 h-full bg-green-500 opacity-20"></div>
+                                            <div className="w-1/4 h-full bg-yellow-500 opacity-20"></div>
+                                            <div className="w-1/4 h-full bg-red-500 opacity-20"></div>
+                                        </div>
+                                        <div className="z-10 text-white text-3xl font-bold">{detectedNote.note}</div>
+                                        <div className="z-10 text-sm text-gray-200">{detectedFrequency ? `${detectedFrequency} Hz` : 'No sound detected'}</div>
+
+                                        <div className="absolute top-0 bottom-0 left-1/2 w-1 bg-white -translate-x-1/2 z-20"></div>
+                                        <div
+                                            className="absolute bottom-0 w-0 h-0 border-l-[10px] border-l-transparent border-r-[10px] border-r-transparent border-b-[20px] border-b-indigo-400 transition-transform duration-100 ease-out z-30"
+                                            style={{
+                                                transform: `translateX(${detectedNote.cents / 2}px)`,
+                                            }}
+                                        ></div>
+
+                                    </div>
+                                    <p className={`text-center text-sm mt-2 ${detectedNote.cents === 0 ? 'text-green-400' : 'text-yellow-400'}`}>
+                                        {tunerStatus === 'off' ? 'Press "Start Tuner" and play a note.' : `Cents: ${detectedNote.cents}`}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+
+                // Default chat mode
+                return (
+                    <div className="flex flex-col h-full">
+                        {/* Chat Window */}
+                        <div className="flex-1 p-4 overflow-y-auto space-y-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+                            {messages.length === 0 && !isAIGenerating ? (
+                                <div className="text-center text-gray-500 py-10">
+                                    <p>Start a conversation with Madison AI.</p>
+                                    <p>Your chat is saved automatically and will sync across devices.</p>
+                                    {firestoreError && <p className="text-red-500 mt-2">Error connecting to Firestore: {firestoreError}</p>}
+                                </div>
+                            ) : (
+                                messages.map((msg, index) => (
+                                    <div
+                                        key={index}
+                                        className={`flex items-start space-x-3 ${msg.role === 'user' ? 'justify-end' : ''}`}
+                                    >
+                                        {msg.role === 'ai' && <BotIcon className="flex-shrink-0 text-indigo-400 mt-1" />}
+                                        <div className={`relative p-3 rounded-xl max-w-[80%] ${msg.role === 'user'
+                                            ? 'bg-indigo-600 text-white rounded-br-none'
+                                            : 'bg-gray-700 text-gray-100 rounded-bl-none'
+                                            }`}>
+                                            <div
+                                                className="prose prose-sm prose-invert"
+                                                dangerouslySetInnerHTML={{ __html: getParsedMarkdown(msg.content, msg.isCode) }}
+                                            ></div>
+                                        </div>
+                                        {msg.role === 'user' && <UserIcon className="flex-shrink-0 text-gray-400 mt-1" />}
+                                    </div>
+                                ))
+                            )}
+                            {isAIGenerating && (
+                                <div className="flex items-start space-x-3">
+                                    <BotIcon className="flex-shrink-0 text-indigo-400 mt-1" />
+                                    <div className="p-3 bg-gray-700 rounded-xl rounded-bl-none flex items-center space-x-2">
+                                        <div className="dot-flashing"></div>
+                                        <span className="text-sm">Madison is thinking...</span>
+                                    </div>
+                                </div>
+                            )}
+                            <div ref={messagesEndRef} />
+                        </div>
+
+                        {/* Input Area */}
+                        <div className="p-4 bg-gray-800 border-t border-gray-700">
+                            <div className="relative flex items-center bg-gray-700 rounded-full shadow-lg">
+                                <textarea
+                                    ref={textareaRef}
+                                    value={input}
+                                    onChange={(e) => setInput(e.target.value)}
+                                    onKeyDown={handleKeyDown}
+                                    className="w-full pl-6 pr-24 py-3 bg-transparent text-white placeholder-gray-400 rounded-full focus:outline-none resize-none overflow-hidden"
+                                    placeholder={isCodeMode ? "Enter code to explain or a request to generate a script..." : "Refine your writing..."}
+                                    rows={1}
+                                ></textarea>
+                                <div className="absolute right-2 flex items-center space-x-2">
+                                    <button
+                                        onClick={() => handleSwitchMode('chat')}
+                                        className={`p-2 rounded-full shadow-lg transition-colors ${!isMusicMode ? 'bg-indigo-600 text-white' : 'bg-gray-600 text-gray-200'}`}
+                                    >
+                                        <FileTextIcon size={24} />
+                                    </button>
+                                    <button
+                                        onClick={() => handleSwitchMode('code')}
+                                        className={`p-2 rounded-full shadow-lg transition-colors ${isCodeMode && !isMusicMode ? 'bg-indigo-600 text-white' : 'bg-gray-600 text-gray-200'}`}
+                                    >
+                                        <CodeIcon size={24} />
+                                     </button>
+                                     <button
+                                        onClick={() => handleSwitchMode('music')}
+                                        className={`p-2 rounded-full shadow-lg transition-colors ${isMusicMode ? 'bg-indigo-600 text-white' : 'bg-gray-600 text-gray-200'}`}
+                                    >
+                                        <MusicIcon size={24} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
             return (
                 <div className="flex flex-col h-full bg-gray-900 rounded-lg shadow-2xl overflow-hidden max-w-4xl mx-auto">
                     {/* Header */}
                     <div className="flex items-center justify-between p-4 bg-gray-800 border-b border-gray-700">
                         <div className="flex items-center space-x-2">
                             <BotIcon className="text-indigo-400" size={28} />
-                            <h1 className="text-xl font-bold text-white">Madison AI (Offline)</h1>
+                            <h1 className="text-xl font-bold text-white">Madison AI (Hybrid)</h1>
                         </div>
-                        <div className="text-xs text-gray-400">
-                            Status: Offline Mode
+                        <div className={`text-xs px-2 py-1 rounded-full flex items-center gap-1 ${isOnline ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
+                            {isOnline ? <WifiIcon size={16} /> : <WifiOffIcon size={16} />}
+                            <span className="font-medium">{isOnline ? 'Online' : 'Offline'} Mode</span>
                         </div>
                     </div>
 
-                    {/* Chat Window */}
-                    <div className="flex-1 p-4 overflow-y-auto space-y-4" style={{ WebkitOverflowScrolling: 'touch' }}>
-                        {messages.length === 0 && !isAIGenerating ? (
-                            <div className="text-center text-gray-500 py-10">
-                                <p>Start a conversation with Madison AI.</p>
-                                <p>This is the offline version. Your data is saved locally in your browser.</p>
-                            </div>
-                        ) : (
-                            messages.map((msg, index) => (
-                                <div
-                                    key={index}
-                                    className={`flex items-start space-x-3 ${msg.role === 'user' ? 'justify-end' : ''}`}
-                                >
-                                    {msg.role === 'ai' && <BotIcon className="flex-shrink-0 text-indigo-400 mt-1" />}
-                                    <div className={`relative p-3 rounded-xl max-w-[80%] ${msg.role === 'user'
-                                        ? 'bg-indigo-600 text-white rounded-br-none'
-                                        : 'bg-gray-700 text-gray-100 rounded-bl-none'
-                                        }`}>
-                                        <div
-                                            className="prose prose-sm prose-invert"
-                                            dangerouslySetInnerHTML={{ __html: getParsedMarkdown(msg.content, msg.isCode) }}
-                                        ></div>
-                                    </div>
-                                    {msg.role === 'user' && <UserIcon className="flex-shrink-0 text-gray-400 mt-1" />}
-                                </div>
-                            ))
-                        )}
-                        {isAIGenerating && (
-                            <div className="flex items-start space-x-3">
-                                <BotIcon className="flex-shrink-0 text-indigo-400 mt-1" />
-                                <div className="p-3 bg-gray-700 rounded-xl rounded-bl-none">
-                                    <span className="text-sm">...Thinking...</span>
-                                </div>
-                            </div>
-                        )}
-                        <div ref={messagesEndRef} />
+                    {/* Main Content Area */}
+                    <div className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                       {renderMainContent()}
                     </div>
 
-                    {/* Input Area */}
-                    <div className="p-4 bg-gray-800 border-t border-gray-700">
-                        <div className="relative flex items-center bg-gray-700 rounded-full shadow-lg">
-                            <textarea
-                                ref={textareaRef}
-                                value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                onKeyDown={handleKeyDown}
-                                className="w-full pl-6 pr-24 py-3 bg-transparent text-white placeholder-gray-400 rounded-full focus:outline-none resize-none overflow-hidden"
-                                placeholder={isCodeMode ? "Enter code to explain..." : "Refine your writing..."}
-                                rows={1}
-                            ></textarea>
-                            <div className="absolute right-2 flex items-center space-x-2">
-                                <button
-                                    className="p-2 bg-gray-600 text-white rounded-full shadow-lg hover:bg-gray-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-1"
-                                    onClick={() => setIsCodeMode(!isCodeMode)}
-                                >
-                                    {isCodeMode ? (
-                                        <React.Fragment>
-                                            <FileTextIcon size={16} />
-                                            <span className="font-semibold">Writing Mode</span>
-                                        </React.Fragment>
-                                    ) : (
-                                        <React.Fragment>
-                                            <CodeIcon size={16} />
-                                            <span className="font-semibold">Code Mode</span>
-                                        </React.Fragment>
-                                    )}
-                                </button>
-                                {isCodeMode ? (
-                                    <button
-                                        className="p-2 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-1"
-                                        onClick={handleExplainCode}
-                                        disabled={isAIGenerating || !input.trim()}
-                                    >
-                                        <CodeIcon size={16} />
-                                        <span className="font-semibold">✨ Explain Code</span>
-                                    </button>
-                                ) : (
-                                    <button
-                                        className="p-2 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-1"
-                                        onClick={handleRefineWriting}
-                                        disabled={isAIGenerating || !input.trim()}
-                                    >
-                                        <WandIcon size={16} />
-                                        <span className="font-semibold">✨ Refine Writing</span>
-                                    </button>
-                                )}
-                            </div>
-                        </div>
+                    {/* Mode Toggle Buttons */}
+                    <div className="p-4 bg-gray-800 border-t border-gray-700 flex justify-center space-x-4">
+                        <button
+                            onClick={() => handleSwitchMode('chat')}
+                            className={`p-2 rounded-full shadow-lg transition-colors ${!isMusicMode ? 'bg-indigo-600 text-white' : 'bg-gray-600 text-gray-200'}`}
+                        >
+                            <FileTextIcon size={24} />
+                        </button>
+                        <button
+                            onClick={() => handleSwitchMode('code')}
+                            className={`p-2 rounded-full shadow-lg transition-colors ${isCodeMode && !isMusicMode ? 'bg-indigo-600 text-white' : 'bg-gray-600 text-gray-200'}`}
+                        >
+                            <CodeIcon size={24} />
+                        </button>
+                         <button
+                            onClick={() => handleSwitchMode('music')}
+                            className={`p-2 rounded-full shadow-lg transition-colors ${isMusicMode ? 'bg-indigo-600 text-white' : 'bg-gray-600 text-gray-200'}`}
+                        >
+                            <MusicIcon size={24} />
+                        </button>
                     </div>
                 </div>
             );
