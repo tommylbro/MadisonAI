@@ -207,6 +207,14 @@
         let isTunerActive = false;
         let isAIGenerating = false;
         let extractedCode = { content: '', language: '' };
+        
+        // --- API Key Check ---
+        const apiKey = "AIzaSyCBBfnCqQlfrOCmSPzNuyC8F4jT0OHUX7g";
+        const isApiKeyAvailable = !!apiKey;
+        // The API Key is not available in this environment.
+        if (!isApiKeyAvailable) {
+            console.warn("API key for Gemini is not available. AI features will be disabled.");
+        }
 
         // Audio-related state for the instrument tuner
         let audioContext = null;
@@ -547,6 +555,16 @@
 
             const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
             
+            // FIX: Added a check for API key before making the fetch call.
+            if (!isApiKeyAvailable) {
+                console.error("API key is not available. Cannot send request to AI.");
+                showMessageBox("AI features are disabled. Missing API key.");
+                isAIGenerating = false;
+                chatInput.disabled = false;
+                sendBtn.disabled = false;
+                return;
+            }
+
             try {
                 const fetchWithRetry = async (url, options, retries = 3, delay = 1000) => {
                     try {
@@ -565,7 +583,6 @@
                     }
                 };
                 
-                const apiKey = "";
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
 
                 const payload = {
