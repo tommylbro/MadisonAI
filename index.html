@@ -43,7 +43,6 @@
     <div id="main-container" class="flex-grow flex transition-all duration-300 flex-row">
 
         <!-- Right Sidebar for Code -->
-        <!-- FIX: Added 'custom-scrollbar' class to this container. -->
         <aside id="code-sidebar" class="w-96 bg-gray-800 p-4 flex-col transition-all duration-300 transform translate-x-full absolute right-0 top-0 bottom-0 hidden lg:flex">
             <div class="flex items-center justify-between mb-4">
                 <div class="flex space-x-2">
@@ -285,8 +284,15 @@
         // --- Firebase Initialization and Data Fetching ---
         window.addEventListener('load', async () => {
             try {
+                // FIX: Added a check to see if firebaseConfig is present before initializing.
                 if (!firebaseConfig || !firebaseConfig.apiKey) {
-                    throw new Error("Firebase configuration is missing or invalid.");
+                    const errorMessage = "Error: Firebase configuration is missing or invalid. Please check your environment.";
+                    console.error(errorMessage);
+                    showMessageBox(errorMessage);
+                    statusIndicator.textContent = 'Offline';
+                    statusIndicator.classList.remove('bg-green-500');
+                    statusIndicator.classList.add('bg-red-500');
+                    return;
                 }
 
                 const app = initializeApp(firebaseConfig);
