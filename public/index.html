@@ -551,6 +551,7 @@
             isAIGenerating = true;
             chatInput.disabled = true;
             sendBtn.disabled = true;
+            chatInput.placeholder = "Sending...";
             
             if (!apiKey || apiKey === "dummy") {
                 const newUserMessage = {
@@ -572,6 +573,7 @@
                 chatInput.disabled = false;
                 sendBtn.disabled = false;
                 chatInput.value = '';
+                chatInput.placeholder = "Type a message...";
                 return;
             }
 
@@ -648,9 +650,11 @@
                 console.error("API call error:", e);
                 showMessageBox("Failed to get a response from the AI. Check your network or try again later.");
             } finally {
+                // This is the critical change: ensure the UI is reset regardless of success or failure
                 isAIGenerating = false;
                 chatInput.disabled = false;
                 sendBtn.disabled = false;
+                chatInput.placeholder = "Type a message...";
             }
         }
 
