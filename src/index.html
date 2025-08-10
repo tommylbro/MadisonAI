@@ -209,7 +209,7 @@
         let extractedCode = { content: '', language: '' };
         
         // --- API Key Check ---
-        const apiKey = "AIzaSyCBBfnCqQlfrOCmSPzNuyC8F4jT0OHUX7g";
+        const apiKey = "";
         const isApiKeyAvailable = !!apiKey;
         // The API Key is not available in this environment.
         if (!isApiKeyAvailable) {
@@ -287,6 +287,15 @@
             codeSidebar.classList.add('absolute');
             mainContainer.classList.remove('lg:flex-row-reverse');
             extractedCode = { content: '', language: '' };
+        }
+        
+        // Function to create and append a new message to the chat
+        function createAndAppendMessage(role, text) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `p-4 rounded-xl shadow-md max-w-lg relative ${role === 'user' ? 'bg-gray-700 self-end ml-auto' : 'bg-indigo-700 self-start mr-auto'}`;
+            messageDiv.innerHTML = renderMarkdown(text);
+            messagesContainer.appendChild(messageDiv);
+            scrollToBottom();
         }
 
         // --- Firebase Initialization and Data Fetching ---
@@ -533,6 +542,17 @@
             isAIGenerating = true;
             chatInput.disabled = true;
             sendBtn.disabled = true;
+            
+            // FIX: If in offline mode, display the message immediately without trying to save to DB
+            if (!db) {
+                createAndAppendMessage('user', prompt);
+                showMessageBox("AI features are disabled. Missing API key.");
+                isAIGenerating = false;
+                chatInput.disabled = false;
+                sendBtn.disabled = false;
+                chatInput.value = ''; // Clear the input field
+                return;
+            }
 
             const newUserMessage = {
                 role: 'user',
