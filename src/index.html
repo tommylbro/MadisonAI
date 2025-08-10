@@ -284,15 +284,33 @@
         // --- Firebase Initialization and Data Fetching ---
         window.addEventListener('load', async () => {
             try {
-                // FIX: Added a check to see if firebaseConfig is present before initializing.
+                // FIX: Added a check to see if firebaseConfig is present before initializing. If not, use dummy data.
                 if (!firebaseConfig || !firebaseConfig.apiKey) {
-                    const errorMessage = "Error: Firebase configuration is missing or invalid. Please check your environment.";
-                    console.error(errorMessage);
-                    showMessageBox(errorMessage);
+                    console.log("Firebase configuration is missing. Running in standalone mode.");
                     statusIndicator.textContent = 'Offline';
-                    statusIndicator.classList.remove('bg-green-500');
-                    statusIndicator.classList.add('bg-red-500');
-                    return;
+                    statusIndicator.classList.remove('bg-red-500');
+                    statusIndicator.classList.add('bg-gray-500');
+                    chatInput.disabled = false;
+                    sendBtn.disabled = false;
+                    isAuthReady = true;
+
+                    // Mock message data for offline use
+                    const mockMessages = [
+                        { role: 'user', text: 'Hey, can you help me with a melody?', timestamp: new Date() },
+                        { role: 'assistant', text: 'Sure, I can help you with that! How about we start with a simple C major chord progression?', timestamp: new Date() }
+                    ];
+
+                    // Render mock messages
+                    messagesContainer.innerHTML = ''; 
+                    mockMessages.forEach(msg => {
+                        const messageDiv = document.createElement('div');
+                        messageDiv.className = `p-4 rounded-xl shadow-md max-w-lg relative ${msg.role === 'user' ? 'bg-gray-700 self-end ml-auto' : 'bg-indigo-700 self-start mr-auto'}`;
+                        messageDiv.innerHTML = renderMarkdown(msg.text);
+                        messagesContainer.appendChild(messageDiv);
+                    });
+                    scrollToBottom();
+                    
+                    return; // Exit the function to prevent further Firebase-related errors
                 }
 
                 const app = initializeApp(firebaseConfig);
@@ -515,11 +533,14 @@
                 type: type,
             };
 
-            try {
-                await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chats`), newUserMessage);
-            } catch (e) {
-                console.error("Error adding user message to Firestore:", e);
-                showMessageBox("Could not save your message. Please try again.");
+            // Only add to Firestore if `db` is available
+            if (db) {
+                try {
+                    await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chats`), newUserMessage);
+                } catch (e) {
+                    console.error("Error adding user message to Firestore:", e);
+                    showMessageBox("Could not save your message. Please try again.");
+                }
             }
 
             chatInput.value = '';
@@ -570,12 +591,15 @@
                         timestamp: serverTimestamp(),
                         type: type,
                     };
-
-                    try {
-                        await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chats`), newAIMessage);
-                    } catch (e) {
-                        console.error("Error adding AI message:", e);
-                        showMessageBox("Could not save AI response. Please try again.");
+                    
+                    // Only add to Firestore if `db` is available
+                    if (db) {
+                        try {
+                            await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chats`), newAIMessage);
+                        } catch (e) {
+                            console.error("Error adding AI message:", e);
+                            showMessageBox("Could not save AI response. Please try again.");
+                        }
                     }
                 } else {
                     console.error("Unexpected API response format:", result);
