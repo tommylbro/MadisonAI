@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
 import { marked } from 'marked'; // Import the 'marked' library for markdown parsing
 
 // Icon components for the UI
@@ -49,7 +49,7 @@ const SendIcon = ({ size = 24 }) => (
 );
 
 const App = () => {
-    // State variables for managing app functionality
+    // --- Configuration and State Variables ---
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [activeMode, setActiveMode] = useState('refine');
@@ -58,8 +58,17 @@ const App = () => {
     const [firestoreError, setFirestoreError] = useState(null);
     const [isTunerActive, setIsTunerActive] = useState(false);
     const [tunerStatus, setTunerStatus] = useState('No sound detected');
-    // State to track if a microphone device is available
     const [microphoneAvailable, setMicrophoneAvailable] = useState(true);
+
+    // Firebase state and config
+    const [db, setDb] = useState(null);
+    const [auth, setAuth] = useState(null);
+    const [userId, setUserId] = useState(null);
+    const messagesEndRef = useRef(null);
+
+    // Global variables from the canvas environment
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
 
     // Audio-related state and refs for the instrument tuner
     const audioContextRef = useRef(null);
@@ -68,24 +77,19 @@ const App = () => {
     const pitchDetectorWorkerRef = useRef(null);
     const animationFrameIdRef = useRef(null);
 
-    // Firebase state and config
-    const [db, setDb] = useState(null);
-    const [auth, setAuth] = useState(null);
-    const [userId, setUserId] = useState(null);
-    const messagesEndRef = useRef(null);
-
-    // Helper function to scroll to the bottom of the chat
+    // --- Utility Functions ---
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
 
-    // Initialize Firebase and set up authentication
+    const renderMarkdown = (markdownText) => {
+        return marked.parse(markdownText);
+    };
+
+    // --- Firebase Initialization and Data Fetching ---
     useEffect(() => {
         const initFirebase = async () => {
             try {
-                const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
                 if (!firebaseConfig || !firebaseConfig.apiKey) {
                     console.error("Firebase config is missing or invalid.");
                     setFirestoreError("Error: Firebase configuration is missing. Please ensure the app is configured correctly.");
@@ -132,7 +136,32 @@ const App = () => {
         initFirebase();
     }, []);
 
-    // Check for microphone device availability on component mount
+    useEffect(() => {
+        if (db && userId && isAuthReady) {
+            const userChatsCollection = collection(db, `artifacts/${appId}/users/${userId}/chats`);
+            
+            // NOTE: orderBy() is intentionally removed to avoid potential index errors.
+            // Data is sorted client-side.
+            const unsubscribe = onSnapshot(userChatsCollection, (snapshot) => {
+                const fetchedMessages = [];
+                snapshot.forEach(doc => {
+                    fetchedMessages.push(doc.data());
+                });
+                
+                // Client-side sorting by timestamp
+                fetchedMessages.sort((a, b) => a.timestamp?.toMillis() - b.timestamp?.toMillis());
+                
+                setMessages(fetchedMessages);
+            }, (error) => {
+                console.error("Error fetching messages from Firestore:", error);
+                setFirestoreError("Error fetching chats. Please check your network connection and try again.");
+            });
+
+            return () => unsubscribe();
+        }
+    }, [db, userId, isAuthReady, appId]);
+
+    // --- Microphone and Tuner Logic ---
     useEffect(() => {
         const checkMicrophone = async () => {
             if (!navigator.mediaDevices) {
@@ -150,135 +179,7 @@ const App = () => {
         };
         checkMicrophone();
     }, []);
-
-    // Set up Firestore data listener
-    useEffect(() => {
-        if (db && userId && isAuthReady) {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-            const userChatsCollection = collection(db, `artifacts/${appId}/users/${userId}/chats`);
-            
-            const q = query(userChatsCollection, orderBy('timestamp', 'asc'));
-
-            const unsubscribe = onSnapshot(q, (snapshot) => {
-                const fetchedMessages = [];
-                snapshot.forEach(doc => {
-                    fetchedMessages.push(doc.data());
-                });
-                setMessages(fetchedMessages);
-            }, (error) => {
-                console.error("Error fetching messages from Firestore:", error);
-                setFirestoreError("Error fetching chats. Please check your network connection and try again.");
-            });
-
-            return () => unsubscribe();
-        }
-    }, [db, userId, isAuthReady]);
-
-    // Handle initial scroll and new message scrolls
-    useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
-
-    // Function to handle sending a new message
-    const handleSendMessage = async (prompt, type) => {
-        if (!prompt.trim() || !isAuthReady) return;
-
-        const newUserMessage = {
-            role: 'user',
-            text: prompt,
-            timestamp: serverTimestamp(),
-            type: type,
-        };
-
-        try {
-            await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chats`), newUserMessage);
-        } catch (e) {
-            console.error("Error adding user message to Firestore:", e);
-            setFirestoreError("Could not save your message. Please try again.");
-        }
-
-        setInput('');
-        setIsAIGenerating(true);
-        
-        const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
-        
-        try {
-            const fetchWithRetry = async (url, options, retries = 3, delay = 1000) => {
-                try {
-                    const response = await fetch(url, options);
-                    if (!response.ok) {
-                        throw new Error(`API Error: ${response.statusText}`);
-                    }
-                    return response;
-                } catch (error) {
-                    if (retries > 0) {
-                        await new Promise(res => setTimeout(res, delay));
-                        return fetchWithRetry(url, options, retries - 1, delay * 2);
-                    } else {
-                        throw error;
-                    }
-                }
-            };
-            
-            const apiKey = "";
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-
-            const payload = {
-                contents: chatHistory,
-            };
-
-            const response = await fetchWithRetry(apiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            const result = await response.json();
-            
-            if (result.candidates && result.candidates.length > 0 &&
-                result.candidates[0].content && result.candidates[0].content.parts &&
-                result.candidates[0].content.parts.length > 0) {
-                const generatedText = result.candidates[0].content.parts[0].text;
-
-                const newAIMessage = {
-                    role: 'assistant',
-                    text: generatedText,
-                    timestamp: serverTimestamp(),
-                    type: type,
-                };
-                
-                try {
-                    await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chats`), newAIMessage);
-                } catch (e) {
-                    console.error("Error adding AI message:", e);
-                    setFirestoreError("Could not save AI response. Please try again.");
-                }
-            } else {
-                console.error("Unexpected API response format:", result);
-                setFirestoreError("AI response failed. Please try again.");
-            }
-
-        } catch (e) {
-            console.error("API call error:", e);
-            setFirestoreError("Failed to get a response from the AI. Check your network or try again later.");
-        } finally {
-            setIsAIGenerating(false);
-        }
-    };
-
-    const handleRefineWriting = () => {
-        handleSendMessage(input, 'refine');
-    };
-
-    const handleExplainCode = () => {
-        handleSendMessage(input, 'explain');
-    };
-
-    // Markdown rendering with marked.js
-    const renderMarkdown = (markdownText) => {
-        return marked.parse(markdownText);
-    };
-
+    
     // Instrument Tuner Logic
     const startTuner = async () => {
         if (isTunerActive || !microphoneAvailable) return;
@@ -393,6 +294,107 @@ const App = () => {
         setTunerStatus('No sound detected');
     };
 
+    // --- Message Handling Logic ---
+    const handleSendMessage = async (prompt, type) => {
+        if (!prompt.trim() || !isAuthReady) return;
+
+        const newUserMessage = {
+            role: 'user',
+            text: prompt,
+            timestamp: serverTimestamp(),
+            type: type,
+        };
+
+        try {
+            await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chats`), newUserMessage);
+        } catch (e) {
+            console.error("Error adding user message to Firestore:", e);
+            setFirestoreError("Could not save your message. Please try again.");
+        }
+
+        setInput('');
+        setIsAIGenerating(true);
+        
+        const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+        
+        try {
+            const fetchWithRetry = async (url, options, retries = 3, delay = 1000) => {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) {
+                        throw new Error(`API Error: ${response.statusText}`);
+                    }
+                    return response;
+                } catch (error) {
+                    if (retries > 0) {
+                        await new Promise(res => setTimeout(res, delay));
+                        return fetchWithRetry(url, options, retries - 1, delay * 2);
+                    } else {
+                        throw error;
+                    }
+                }
+            };
+            
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+            const payload = {
+                contents: chatHistory,
+            };
+
+            const response = await fetchWithRetry(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            
+            if (result.candidates && result.candidates.length > 0 &&
+                result.candidates[0].content && result.candidates[0].content.parts &&
+                result.candidates[0].content.parts.length > 0) {
+                const generatedText = result.candidates[0].content.parts[0].text;
+
+                const newAIMessage = {
+                    role: 'assistant',
+                    text: generatedText,
+                    timestamp: serverTimestamp(),
+                    type: type,
+                };
+                
+                try {
+                    await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chats`), newAIMessage);
+                } catch (e) {
+                    console.error("Error adding AI message:", e);
+                    setFirestoreError("Could not save AI response. Please try again.");
+                }
+            } else {
+                console.error("Unexpected API response format:", result);
+                setFirestoreError("AI response failed. Please try again.");
+            }
+
+        } catch (e) {
+            console.error("API call error:", e);
+            setFirestoreError("Failed to get a response from the AI. Check your network or try again later.");
+        } finally {
+            setIsAIGenerating(false);
+        }
+    };
+
+    const handleRefineWriting = () => {
+        handleSendMessage(input, 'refine');
+    };
+
+    const handleExplainCode = () => {
+        handleSendMessage(input, 'explain');
+    };
+
+    // Handle initial scroll and new message scrolls
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages]);
+
+    // --- Component JSX ---
     return (
         <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center justify-center p-4 font-sans">
             <div className="w-full max-w-4xl bg-gray-800 rounded-2xl shadow-xl flex flex-col h-[90vh]">
@@ -503,6 +505,7 @@ const App = () => {
                                     }
                                 }}
                                 disabled={isAIGenerating || isTunerActive}
+                                aria-label="Chat Input"
                             />
                             <button
                                 className="p-2 bg-indigo-500 text-white rounded-full transition-colors duration-200 hover:bg-indigo-400 disabled:bg-gray-500 disabled:cursor-not-allowed"
