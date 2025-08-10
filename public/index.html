@@ -1,528 +1,657 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
-import { marked } from 'marked'; // Import the 'marked' library for markdown parsing
-
-// Icon components for the UI
-const WandIcon = ({ size = 24 }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-sparkles">
-        <path d="M12 2c.4 0 .8.2 1.04.62l1.9 3.9a.75.75 0 0 0 .6.3c.26 0 .5-.1.6-.3L18 4l2.9-2.3a.75.75 0 0 1 .6.3l.2.4c.1.2 0 .4-.2.6L18 8l3.9 1.9c.4.2.4.6 0 .8L18 12l.2 3.6c.1.2 0 .4-.2.6L14 20l-1.9 3.9a.75.75 0 0 1-.6.3c-.26 0-.5-.1-.6-.3L9 20l-1.9-3.9a.75.75 0 0 1-.6-.3c-.26 0-.5.1-.6.3L2 12l.2-3.6c.1-.2 0-.4-.2-.6L6 4l2.9-2.3a.75.75 0 0 1 .6-.3L12 2z" />
-        <path d="M12 12l1.9 3.9a.75.75 0 0 0 .6.3c.26 0 .5-.1.6-.3L17 12l-1.9-3.9a.75.75 0 0 0-.6-.3c-.26 0-.5.1-.6.3L12 12z" />
-    </svg>
-);
-
-const CodeIcon = ({ size = 24 }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-code">
-        <polyline points="16 18 22 12 16 6" />
-        <polyline points="8 6 2 12 8 18" />
-    </svg>
-);
-
-const MusicIcon = ({ size = 24 }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-music-4">
-        <path d="M9 18V5l12-2v13" />
-        <circle cx="6" cy="18" r="3" />
-        <circle cx="18" cy="16" r="3" />
-    </svg>
-);
-
-const AudioWaveformIcon = ({ size = 24 }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-waveform">
-        <path d="M2 12h2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-2a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-2a2 2 0 0 1 2-2h2" />
-    </svg>
-);
-
-const MicIcon = ({ size = 24 }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-mic">
-        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
-        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-        <line x1="12" x2="12" y1="19" y2="22" />
-    </svg>
-);
-
-const SendIcon = ({ size = 24 }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-send">
-        <path d="M22 2L11 13" />
-        <path d="M22 2L15 22L11 13L2 9L22 2Z" />
-    </svg>
-);
-
-const App = () => {
-    // --- Configuration and State Variables ---
-    const [messages, setMessages] = useState([]);
-    const [input, setInput] = useState('');
-    const [activeMode, setActiveMode] = useState('refine');
-    const [isAIGenerating, setIsAIGenerating] = useState(false);
-    const [isAuthReady, setIsAuthReady] = useState(false);
-    const [firestoreError, setFirestoreError] = useState(null);
-    const [isTunerActive, setIsTunerActive] = useState(false);
-    const [tunerStatus, setTunerStatus] = useState('No sound detected');
-    const [microphoneAvailable, setMicrophoneAvailable] = useState(true);
-
-    // Firebase state and config
-    const [db, setDb] = useState(null);
-    const [auth, setAuth] = useState(null);
-    const [userId, setUserId] = useState(null);
-    const messagesEndRef = useRef(null);
-
-    // Global variables from the canvas environment
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-
-    // Audio-related state and refs for the instrument tuner
-    const audioContextRef = useRef(null);
-    const analyserRef = useRef(null);
-    const sourceRef = useRef(null);
-    const pitchDetectorWorkerRef = useRef(null);
-    const animationFrameIdRef = useRef(null);
-
-    // --- Utility Functions ---
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    };
-
-    const renderMarkdown = (markdownText) => {
-        return marked.parse(markdownText);
-    };
-
-    // --- Firebase Initialization and Data Fetching ---
-    useEffect(() => {
-        const initFirebase = async () => {
-            try {
-                if (!firebaseConfig || !firebaseConfig.apiKey) {
-                    console.error("Firebase config is missing or invalid.");
-                    setFirestoreError("Error: Firebase configuration is missing. Please ensure the app is configured correctly.");
-                    return;
-                }
-
-                const app = initializeApp(firebaseConfig);
-                const firestore = getFirestore(app);
-                const firebaseAuth = getAuth(app);
-
-                setDb(firestore);
-                setAuth(firebaseAuth);
-
-                onAuthStateChanged(firebaseAuth, async (user) => {
-                    if (user) {
-                        setUserId(user.uid);
-                        setIsAuthReady(true);
-                        setFirestoreError(null);
-                    } else {
-                        const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                        if (token) {
-                            try {
-                                await signInWithCustomToken(firebaseAuth, token);
-                            } catch (e) {
-                                console.error("Error signing in with custom token:", e);
-                                setFirestoreError("Error connecting to Firestore: Custom authentication failed.");
-                            }
-                        } else {
-                            try {
-                                await signInAnonymously(firebaseAuth);
-                            } catch (e) {
-                                console.error("Error signing in anonymously:", e);
-                                setFirestoreError("Error connecting to Firestore: Anonymous authentication failed.");
-                            }
-                        }
-                    }
-                });
-            } catch (e) {
-                console.error("Failed to initialize Firebase:", e);
-                setFirestoreError("Error initializing Firebase. Please check the configuration.");
-            }
-        };
-
-        initFirebase();
-    }, []);
-
-    useEffect(() => {
-        if (db && userId && isAuthReady) {
-            const userChatsCollection = collection(db, `artifacts/${appId}/users/${userId}/chats`);
-            
-            // NOTE: orderBy() is intentionally removed to avoid potential index errors.
-            // Data is sorted client-side.
-            const unsubscribe = onSnapshot(userChatsCollection, (snapshot) => {
-                const fetchedMessages = [];
-                snapshot.forEach(doc => {
-                    fetchedMessages.push(doc.data());
-                });
-                
-                // Client-side sorting by timestamp
-                fetchedMessages.sort((a, b) => a.timestamp?.toMillis() - b.timestamp?.toMillis());
-                
-                setMessages(fetchedMessages);
-            }, (error) => {
-                console.error("Error fetching messages from Firestore:", error);
-                setFirestoreError("Error fetching chats. Please check your network connection and try again.");
-            });
-
-            return () => unsubscribe();
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hybrid Music Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
         }
-    }, [db, userId, isAuthReady, appId]);
-
-    // --- Microphone and Tuner Logic ---
-    useEffect(() => {
-        const checkMicrophone = async () => {
-            if (!navigator.mediaDevices) {
-                setMicrophoneAvailable(false);
-                return;
-            }
-            try {
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                const hasMicrophone = devices.some(device => device.kind === 'audioinput');
-                setMicrophoneAvailable(hasMicrophone);
-            } catch (err) {
-                console.error("Error enumerating devices:", err);
-                setMicrophoneAvailable(false);
-            }
-        };
-        checkMicrophone();
-    }, []);
-    
-    // Instrument Tuner Logic
-    const startTuner = async () => {
-        if (isTunerActive || !microphoneAvailable) return;
-
-        setIsTunerActive(true);
-        setTunerStatus('Listening...');
-
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-            audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-            analyserRef.current = audioContextRef.current.createAnalyser();
-            analyserRef.current.fftSize = 2048;
-            sourceRef.current = audioContextRef.current.createMediaStreamSource(stream);
-            sourceRef.current.connect(analyserRef.current);
-
-            pitchDetectorWorkerRef.current = new Worker(URL.createObjectURL(new Blob([
-                `function autoCorrelate(buffer, sampleRate) {
-                    let SIZE = buffer.length;
-                    let bestOffset = -1;
-                    let bestCorrelation = 0;
-                    let rms = 0;
-                    
-                    for (let i = 0; i < SIZE; i++) {
-                        let val = buffer[i];
-                        rms += val * val;
-                    }
-                    rms = Math.sqrt(rms / SIZE);
-                    if (rms < 0.01) { 
-                        return -1;
-                    }
-                    
-                    let correlation = new Array(SIZE).fill(0);
-                    for (let i = 0; i < SIZE; i++) {
-                        for (let j = 0; j < SIZE - i; j++) {
-                            correlation[i] += buffer[j] * buffer[j + i];
-                        }
-                    }
-                    
-                    let d = 0;
-                    while (correlation[d] > 0 && d < SIZE) {
-                        d++;
-                    }
-                    let maxVal = -1;
-                    let maxIdx = -1;
-                    
-                    for (let i = d; i < SIZE; i++) {
-                        if (correlation[i] > maxVal) {
-                            maxVal = correlation[i];
-                            maxIdx = i;
-                        }
-                    }
-                    return sampleRate / maxIdx;
-                }
-                
-                self.onmessage = function(e) {
-                    const { buffer, sampleRate } = e.data;
-                    const pitch = autoCorrelate(buffer, sampleRate);
-                    self.postMessage(pitch);
-                };`
-            ], { type: 'application/javascript' })));
-
-            pitchDetectorWorkerRef.current.onmessage = (e) => {
-                const pitch = e.data;
-                if (pitch > 0) {
-                    setTunerStatus(`Pitch: ${pitch.toFixed(2)} Hz`);
-                } else {
-                    setTunerStatus('No sound detected');
-                }
-            };
-            
-            const bufferSize = analyserRef.current.fftSize;
-            const buffer = new Float32Array(bufferSize);
-
-            const detectPitch = () => {
-                analyserRef.current.getFloatTimeDomainData(buffer);
-                pitchDetectorWorkerRef.current.postMessage({
-                    buffer: buffer.slice(),
-                    sampleRate: audioContextRef.current.sampleRate
-                });
-                animationFrameIdRef.current = requestAnimationFrame(detectPitch);
-            };
-            animationFrameIdRef.current = requestAnimationFrame(detectPitch);
-
-        } catch (err) {
-            console.error('Error accessing microphone:', err);
-            setIsTunerActive(false);
-            setTunerStatus('Error accessing microphone');
-            if (err.name === 'NotAllowedError') {
-                setMicrophoneAvailable(false);
-            }
+        /* Custom scrollbar for consistency across the app */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
         }
-    };
-
-    const stopTuner = () => {
-        setIsTunerActive(false);
-        if (animationFrameIdRef.current) {
-            cancelAnimationFrame(animationFrameIdRef.current);
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #4b5563; /* Tailwind gray-600 */
         }
-        if (sourceRef.current) {
-            sourceRef.current.disconnect();
-            sourceRef.current.mediaStream.getTracks().forEach(track => track.stop());
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #6b7280; /* Tailwind gray-500 */
+            border-radius: 20px;
+            border: 2px solid #4b5563;
         }
-        if (audioContextRef.current) {
-            audioContextRef.current.close();
-            audioContextRef.current = null;
-        }
-        if (pitchDetectorWorkerRef.current) {
-            pitchDetectorWorkerRef.current.terminate();
-            pitchDetectorWorkerRef.current = null;
-        }
-        setTunerStatus('No sound detected');
-    };
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 flex min-h-screen">
 
-    // --- Message Handling Logic ---
-    const handleSendMessage = async (prompt, type) => {
-        if (!prompt.trim() || !isAuthReady) return;
+    <!-- Sidebar (Left Column) -->
+    <aside class="w-20 md:w-64 bg-gray-800 p-4 flex flex-col justify-between items-center md:items-start transition-all duration-300">
+        <div class="flex flex-col items-center md:items-start w-full">
+            <div class="flex items-center space-x-2 mb-8">
+                <!-- Gemini Icon (SVG) -->
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-gemini text-white">
+                    <path d="M12 2c.4 0 .8.2 1.04.62l1.9 3.9a.75.75 0 0 0 .6.3c.26 0 .5-.1.6-.3L18 4l2.9-2.3a.75.75 0 0 1 .6.3l.2.4c.1.2 0 .4-.2.6L18 8l3.9 1.9c.4.2.4.6 0 .8L18 12l.2 3.6c.1.2 0 .4-.2.6L14 20l-1.9 3.9a.75.75 0 0 1-.6.3c-.26 0-.5-.1-.6-.3L9 20l-1.9-3.9a.75.75 0 0 1-.6-.3c-.26 0-.5.1-.6.3L2 12l.2-3.6c.1-.2 0-.4-.2-.6L6 4l2.9-2.3a.75.75 0 0 1 .6-.3L12 2z" />
+                </svg>
+                <h2 class="hidden md:block text-2xl font-bold">MadisonAI</h2>
+            </div>
+        </div>
+    </aside>
 
-        const newUserMessage = {
-            role: 'user',
-            text: prompt,
-            timestamp: serverTimestamp(),
-            type: type,
-        };
+    <!-- Main Content and Right Sidebar Container -->
+    <div id="main-container" class="flex-grow flex transition-all duration-300 flex-row">
 
-        try {
-            await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chats`), newUserMessage);
-        } catch (e) {
-            console.error("Error adding user message to Firestore:", e);
-            setFirestoreError("Could not save your message. Please try again.");
-        }
-
-        setInput('');
-        setIsAIGenerating(true);
-        
-        const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
-        
-        try {
-            const fetchWithRetry = async (url, options, retries = 3, delay = 1000) => {
-                try {
-                    const response = await fetch(url, options);
-                    if (!response.ok) {
-                        throw new Error(`API Error: ${response.statusText}`);
-                    }
-                    return response;
-                } catch (error) {
-                    if (retries > 0) {
-                        await new Promise(res => setTimeout(res, delay));
-                        return fetchWithRetry(url, options, retries - 1, delay * 2);
-                    } else {
-                        throw error;
-                    }
-                }
-            };
-            
-            const apiKey = "";
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-
-            const payload = {
-                contents: chatHistory,
-            };
-
-            const response = await fetchWithRetry(apiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            const result = await response.json();
-            
-            if (result.candidates && result.candidates.length > 0 &&
-                result.candidates[0].content && result.candidates[0].content.parts &&
-                result.candidates[0].content.parts.length > 0) {
-                const generatedText = result.candidates[0].content.parts[0].text;
-
-                const newAIMessage = {
-                    role: 'assistant',
-                    text: generatedText,
-                    timestamp: serverTimestamp(),
-                    type: type,
-                };
-                
-                try {
-                    await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chats`), newAIMessage);
-                } catch (e) {
-                    console.error("Error adding AI message:", e);
-                    setFirestoreError("Could not save AI response. Please try again.");
-                }
-            } else {
-                console.error("Unexpected API response format:", result);
-                setFirestoreError("AI response failed. Please try again.");
-            }
-
-        } catch (e) {
-            console.error("API call error:", e);
-            setFirestoreError("Failed to get a response from the AI. Check your network or try again later.");
-        } finally {
-            setIsAIGenerating(false);
-        }
-    };
-
-    const handleRefineWriting = () => {
-        handleSendMessage(input, 'refine');
-    };
-
-    const handleExplainCode = () => {
-        handleSendMessage(input, 'explain');
-    };
-
-    // Handle initial scroll and new message scrolls
-    useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
-
-    // --- Component JSX ---
-    return (
-        <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center justify-center p-4 font-sans">
-            <div className="w-full max-w-4xl bg-gray-800 rounded-2xl shadow-xl flex flex-col h-[90vh]">
-                {/* Header Section */}
-                <div className="p-4 bg-gray-700 rounded-t-2xl flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                        <MusicIcon size={24} />
-                        <h1 className="text-xl font-bold">Madison AI (Hybrid)</h1>
-                    </div>
-                    {/* Online/Offline Status Indicator */}
-                    <span className={`px-3 py-1 rounded-full text-sm font-semibold ${isAuthReady ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}>
-                        {isAuthReady ? 'Online Mode' : 'Connecting...'}
-                    </span>
+        <!-- Right Sidebar for Code -->
+        <!-- FIX: Added 'custom-scrollbar' class to this container. -->
+        <aside id="code-sidebar" class="w-96 bg-gray-800 p-4 flex-col transition-all duration-300 transform translate-x-full absolute right-0 top-0 bottom-0 hidden lg:flex">
+            <div class="flex items-center justify-between mb-4">
+                <div class="flex space-x-2">
+                    <!-- Code View Button -->
+                    <button id="code-view-btn" class="px-4 py-2 rounded-full font-bold transition-colors duration-200 bg-indigo-500 text-white">
+                        Code
+                    </button>
+                    <!-- Preview View Button -->
+                    <button id="preview-view-btn" class="px-4 py-2 rounded-full font-bold transition-colors duration-200 bg-gray-700 text-gray-400 hover:bg-gray-600 hidden">
+                        Preview
+                    </button>
                 </div>
+                <button id="close-sidebar-btn" class="p-1 rounded-full text-gray-400 hover:text-white hover:bg-gray-700">
+                    <!-- X Icon (SVG) -->
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x">
+                        <path d="M18 6L6 18" />
+                        <path d="M6 6L18 18" />
+                    </svg>
+                </button>
+            </div>
+            <!-- FIX: Added 'custom-scrollbar' class to the code-content div. -->
+            <div class="flex-grow overflow-y-auto custom-scrollbar bg-gray-900 rounded-lg p-2 font-mono text-sm">
+                <pre id="code-content" class="whitespace-pre-wrap"><code></code></pre>
+                <div id="preview-content" class="hidden"></div>
+            </div>
+        </aside>
 
-                {/* Main Content Area */}
-                <div className="flex-grow p-4 overflow-y-auto custom-scrollbar relative">
-                    {/* Firestore Error Message */}
-                    {firestoreError && (
-                        <div className="absolute top-4 left-0 right-0 mx-auto w-full max-w-md p-3 bg-red-600 text-white rounded-lg shadow-lg z-10 text-center">
-                            {firestoreError}
-                        </div>
-                    )}
-                    {/* Microphone Error Message */}
-                    {!microphoneAvailable && (
-                        <div className="absolute top-16 left-0 right-0 mx-auto w-full max-w-md p-3 bg-red-600 text-white rounded-lg shadow-lg z-10 text-center">
-                            Microphone not found. Please connect a microphone and grant permission to your browser.
-                        </div>
-                    )}
-
-                    <div className="flex flex-col h-full space-y-4">
-                        {/* Introductory Message */}
-                        <div className="bg-indigo-600 text-white p-4 rounded-xl shadow-md self-start max-w-md">
-                            <h2 className="font-bold text-lg">Music Studio</h2>
-                            <p className="mt-2 text-sm">
-                                Record your ideas, write your lyrics, or tune an instrument.
-                            </p>
-                        </div>
-                        
-                        {/* Chat messages */}
-                        <div className="flex-grow overflow-y-auto space-y-4">
-                            {messages.map((msg, index) => (
-                                <div
-                                    key={index}
-                                    className={`p-4 rounded-xl shadow-md max-w-lg ${
-                                        msg.role === 'user' ? 'bg-gray-700 self-end ml-auto' : 'bg-indigo-700 self-start mr-auto'
-                                    }`}
-                                >
-                                    <div dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }} />
-                                </div>
-                            ))}
-                            <div ref={messagesEndRef} />
-                        </div>
-                    </div>
+        <!-- Main Chat Area -->
+        <main id="main-chat" class="flex-grow flex flex-col h-screen">
+            <!-- Header Section -->
+            <div class="p-4 bg-gray-700 flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <!-- Music Icon (SVG) -->
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-music-4">
+                        <path d="M9 18V5l12-2v13" />
+                        <circle cx="6" cy="18" r="3" />
+                        <circle cx="18" cy="16" r="3" />
+                    </svg>
+                    <h1 class="text-xl font-bold">Madison AI (Hybrid)</h1>
                 </div>
+                <!-- Online/Offline Status Indicator -->
+                <span id="status-indicator" class="px-3 py-1 rounded-full text-sm font-semibold bg-red-500 text-white">
+                    Connecting...
+                </span>
+            </div>
 
-                {/* Footer Input Area */}
-                <div className="p-4 bg-gray-700 rounded-b-2xl">
-                    <div className="flex items-center justify-between space-x-4">
-                        {/* Mode Toggles */}
-                        <div className="flex space-x-2">
-                            {/* Refine Writing Button */}
-                            <button
-                                className={`p-2 rounded-full transition-colors duration-200 ${
-                                    activeMode === 'refine' ? 'bg-indigo-500 text-white' : 'bg-gray-600 text-gray-400'
-                                }`}
-                                onClick={() => setActiveMode('refine')}
-                                aria-label="Refine Writing"
-                            >
-                                <WandIcon size={20} />
-                            </button>
+            <!-- Main Content Area -->
+            <div class="flex-grow p-4 overflow-y-auto custom-scrollbar relative bg-gray-800">
+                <!-- Message Box for errors/info -->
+                <div id="message-box" class="absolute top-4 left-0 right-0 mx-auto w-full max-w-md p-3 bg-red-600 text-white rounded-lg shadow-lg z-10 text-center hidden"></div>
 
-                            {/* Explain Code Button */}
-                            <button
-                                className={`p-2 rounded-full transition-colors duration-200 ${
-                                    activeMode === 'explain' ? 'bg-indigo-500 text-white' : 'bg-gray-600 text-gray-400'
-                                }`}
-                                onClick={() => setActiveMode('explain')}
-                                aria-label="Explain Code"
-                            >
-                                <CodeIcon size={20} />
-                            </button>
+                <div class="flex flex-col h-full space-y-4">
+                    <!-- Introductory Message -->
+                    <div class="bg-indigo-600 text-white p-4 rounded-xl shadow-md self-start max-w-md">
+                        <h2 class="font-bold text-lg">Music Studio</h2>
+                        <p class="mt-2 text-sm">
+                            Record your ideas, write your lyrics, or tune an instrument.
+                        </p>
+                    </div>
 
-                            {/* Tuner Button */}
-                            <button
-                                className={`p-2 rounded-full transition-colors duration-200 ${
-                                    isTunerActive ? 'bg-red-500 text-white' : 'bg-gray-600 text-gray-400'
-                                }`}
-                                onClick={isTunerActive ? stopTuner : startTuner}
-                                disabled={!microphoneAvailable}
-                                aria-label="Toggle Tuner"
-                            >
-                                {isTunerActive ? <MicIcon size={20} /> : <AudioWaveformIcon size={20} />}
-                            </button>
-                        </div>
-
-                        {/* Input Field and Send Button */}
-                        <div className="flex-grow flex items-center bg-gray-600 rounded-full px-4 py-2 space-x-2">
-                            <input
-                                type="text"
-                                className="flex-grow bg-transparent outline-none text-white placeholder-gray-400"
-                                placeholder={isTunerActive ? tunerStatus : "Type a message..."}
-                                value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                onKeyPress={(e) => {
-                                    if (e.key === 'Enter') {
-                                        activeMode === 'refine' ? handleRefineWriting() : handleExplainCode();
-                                    }
-                                }}
-                                disabled={isAIGenerating || isTunerActive}
-                                aria-label="Chat Input"
-                            />
-                            <button
-                                className="p-2 bg-indigo-500 text-white rounded-full transition-colors duration-200 hover:bg-indigo-400 disabled:bg-gray-500 disabled:cursor-not-allowed"
-                                onClick={() => {
-                                    activeMode === 'refine' ? handleRefineWriting() : handleExplainCode();
-                                }}
-                                disabled={!input.trim() || isAIGenerating || isTunerActive}
-                                aria-label="Send Message"
-                            >
-                                <SendIcon size={20} />
-                            </button>
-                        </div>
+                    <!-- Chat messages container -->
+                    <div id="messages-container" class="flex-grow overflow-y-auto space-y-4">
+                        <div id="messages-end"></div>
                     </div>
                 </div>
             </div>
-        </div>
-    );
-};
 
-export default App;
+            <!-- Footer Input Area -->
+            <div class="p-4 bg-gray-700">
+                <div class="flex items-center justify-between space-x-4">
+                    <!-- Mode Toggles -->
+                    <div class="flex space-x-2">
+                        <!-- Refine Writing Button -->
+                        <button id="refine-btn" class="p-2 rounded-full transition-colors duration-200 bg-indigo-500 text-white">
+                            <!-- Wand Icon (SVG) -->
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-sparkles">
+                                <path d="M12 2c.4 0 .8.2 1.04.62l1.9 3.9a.75.75 0 0 0 .6.3c.26 0 .5-.1.6-.3L18 4l2.9-2.3a.75.75 0 0 1 .6.3l.2.4c.1.2 0 .4-.2.6L18 8l3.9 1.9c.4.2.4.6 0 .8L18 12l.2 3.6c.1.2 0 .4-.2.6L14 20l-1.9 3.9a.75.75 0 0 1-.6.3c-.26 0-.5-.1-.6-.3L9 20l-1.9-3.9a.75.75 0 0 1-.6-.3c-.26 0-.5.1-.6.3L2 12l.2-3.6c.1-.2 0-.4-.2-.6L6 4l2.9-2.3a.75.75 0 0 1 .6-.3L12 2z" />
+                                <path d="M12 12l1.9 3.9a.75.75 0 0 0 .6.3c.26 0 .5-.1.6-.3L17 12l-1.9-3.9a.75.75 0 0 0-.6-.3c-.26 0-.5.1-.6.3L12 12z" />
+                            </svg>
+                        </button>
+
+                        <!-- Explain Code Button -->
+                        <button id="explain-code-btn" class="p-2 rounded-full transition-colors duration-200 bg-gray-600 text-gray-400">
+                            <!-- Code Icon (SVG) -->
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-code">
+                                <polyline points="16 18 22 12 16 6" />
+                                <polyline points="8 6 2 12 8 18" />
+                            </svg>
+                        </button>
+
+                        <!-- Tuner Button -->
+                        <button id="tuner-btn" class="p-2 rounded-full transition-colors duration-200 bg-gray-600 text-gray-400">
+                            <!-- Audio Waveform Icon (SVG) -->
+                            <svg id="tuner-icon-off" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-waveform">
+                                <path d="M2 12h2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-2a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-2a2 2 0 0 1 2-2h2" />
+                            </svg>
+                            <!-- Mic Icon (SVG) -->
+                            <svg id="tuner-icon-on" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-mic hidden">
+                                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                                <line x1="12" x2="12" y1="19" y2="22" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- Input Field and Send Button -->
+                    <div class="flex-grow flex items-center bg-gray-600 rounded-full px-4 py-2 space-x-2">
+                        <input id="chat-input" type="text" class="flex-grow bg-transparent outline-none text-white placeholder-gray-400" placeholder="Type a message..." disabled>
+                        <button id="send-btn" class="p-2 bg-indigo-500 text-white rounded-full transition-colors duration-200 hover:bg-indigo-400 disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>
+                            <!-- Send Icon (SVG) -->
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-send">
+                                <path d="M22 2L11 13" />
+                                <path d="M22 2L15 22L11 13L2 9L22 2Z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Firebase -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Use a library for markdown parsing and HTML sanitization
+        import { marked } from "https://cdn.jsdelivr.net/npm/marked/lib/marked.esm.js";
+
+        // Global variables from the canvas environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // UI elements
+        const statusIndicator = document.getElementById('status-indicator');
+        const messagesContainer = document.getElementById('messages-container');
+        const messagesEnd = document.getElementById('messages-end');
+        const chatInput = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('send-btn');
+        const refineBtn = document.getElementById('refine-btn');
+        const explainCodeBtn = document.getElementById('explain-code-btn');
+        const tunerBtn = document.getElementById('tuner-btn');
+        const tunerIconOff = document.getElementById('tuner-icon-off');
+        const tunerIconOn = document.getElementById('tuner-icon-on');
+        const messageBox = document.getElementById('message-box');
+        const codeSidebar = document.getElementById('code-sidebar');
+        const mainContainer = document.getElementById('main-container');
+        const codeViewBtn = document.getElementById('code-view-btn');
+        const previewViewBtn = document.getElementById('preview-view-btn');
+        const closeSidebarBtn = document.getElementById('close-sidebar-btn');
+        const codeContent = document.getElementById('code-content');
+        const previewContent = document.getElementById('preview-content');
+
+        // State variables
+        let isAuthReady = false;
+        let db = null;
+        let auth = null;
+        let userId = null;
+        let activeMode = 'refine'; // 'refine' or 'explain'
+        let isTunerActive = false;
+        let isAIGenerating = false;
+        let extractedCode = { content: '', language: '' };
+
+        // Audio-related state for the instrument tuner
+        let audioContext = null;
+        let analyser = null;
+        let source = null;
+        let pitchDetectorWorker = null;
+        let animationFrameId = null;
+
+        // --- Utility Functions ---
+        function scrollToBottom() {
+            messagesEnd.scrollIntoView({ behavior: "smooth" });
+        }
+
+        function showMessageBox(message, isError = true) {
+            messageBox.textContent = message;
+            messageBox.classList.remove('hidden');
+            if (isError) {
+                messageBox.classList.remove('bg-green-600');
+                messageBox.classList.add('bg-red-600');
+            } else {
+                messageBox.classList.remove('bg-red-600');
+                messageBox.classList.add('bg-green-600');
+            }
+            setTimeout(() => {
+                messageBox.classList.add('hidden');
+            }, 5000);
+        }
+        
+        function renderMarkdown(markdownText) {
+            return marked.parse(markdownText);
+        }
+
+        // Function to extract code blocks and their language from a Markdown string
+        function extractCodeBlocks(markdownText) {
+            const codeBlockRegex = /```(\w+)\n([\s\S]*?)```/g;
+            const matches = [...markdownText.matchAll(codeBlockRegex)];
+
+            if (matches.length > 0) {
+                const language = matches[0][1] || 'text';
+                const content = matches[0][2].trim();
+                return { content, language };
+            }
+            return { content: '', language: '' };
+        }
+        
+        // The parameter 'codeContent' was shadowing the global variable.
+        // We now use the global 'codeContent' element directly and pass the code string as 'codeString'.
+        function handleOpenCodeSidebar(codeString, codeLanguage) {
+            extractedCode = { content: codeString, language: codeLanguage };
+            
+            // Show/hide preview button
+            if (codeLanguage.toLowerCase() === 'html') {
+                previewViewBtn.classList.remove('hidden');
+            } else {
+                previewViewBtn.classList.add('hidden');
+            }
+            
+            // Show the code sidebar
+            codeSidebar.classList.remove('translate-x-full');
+            codeSidebar.classList.remove('absolute');
+            mainContainer.classList.add('lg:flex-row-reverse');
+            
+            // Render the code content
+            codeContent.querySelector('code').textContent = extractedCode.content;
+            previewContent.innerHTML = extractedCode.content;
+        }
+
+        function handleCloseCodeSidebar() {
+            codeSidebar.classList.add('translate-x-full');
+            codeSidebar.classList.add('absolute');
+            mainContainer.classList.remove('lg:flex-row-reverse');
+            extractedCode = { content: '', language: '' };
+        }
+
+        // --- Firebase Initialization and Data Fetching ---
+        window.addEventListener('load', async () => {
+            try {
+                if (!firebaseConfig || !firebaseConfig.apiKey) {
+                    throw new Error("Firebase configuration is missing or invalid.");
+                }
+
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        isAuthReady = true;
+                        statusIndicator.textContent = 'Online Mode';
+                        statusIndicator.classList.remove('bg-red-500');
+                        statusIndicator.classList.add('bg-green-500');
+                        chatInput.disabled = false;
+                        sendBtn.disabled = false;
+                        
+                        const userChatsCollection = collection(db, `artifacts/${appId}/users/${userId}/chats`);
+                        
+                        const q = query(userChatsCollection);
+
+                        onSnapshot(q, (snapshot) => {
+                            messagesContainer.innerHTML = ''; // Clear old messages
+                            const fetchedMessages = [];
+                            snapshot.forEach(doc => {
+                                const data = doc.data();
+                                fetchedMessages.push(data);
+                            });
+
+                            fetchedMessages.sort((a, b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0));
+
+                            fetchedMessages.forEach(msg => {
+                                const messageDiv = document.createElement('div');
+                                messageDiv.className = `p-4 rounded-xl shadow-md max-w-lg relative ${msg.role === 'user' ? 'bg-gray-700 self-end ml-auto' : 'bg-indigo-700 self-start mr-auto'}`;
+                                messageDiv.innerHTML = renderMarkdown(msg.text);
+                                
+                                const codeBlock = extractCodeBlocks(msg.text);
+                                if (codeBlock.content) {
+                                    const codeBtn = document.createElement('button');
+                                    codeBtn.className = "absolute top-2 right-2 p-1 rounded-full text-white bg-indigo-500 hover:bg-indigo-400";
+                                    codeBtn.setAttribute('aria-label', 'Open code sidebar');
+                                    codeBtn.innerHTML = `
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-code">
+                                            <polyline points="16 18 22 12 16 6" />
+                                            <polyline points="8 6 2 12 8 18" />
+                                        </svg>
+                                    `;
+                                    // We now pass the code block content and language to the function.
+                                    codeBtn.onclick = () => handleOpenCodeSidebar(codeBlock.content, codeBlock.language);
+                                    messageDiv.appendChild(codeBtn);
+                                }
+
+                                messagesContainer.appendChild(messageDiv);
+                            });
+                            scrollToBottom();
+                        }, (error) => {
+                            console.error("Error fetching messages:", error);
+                            showMessageBox("Error fetching chats. Please check your network connection and try again.");
+                        });
+
+                    } else {
+                        if (initialAuthToken) {
+                            try {
+                                await signInWithCustomToken(auth, initialAuthToken);
+                            } catch (e) {
+                                console.error("Error signing in with custom token:", e);
+                                showMessageBox("Error connecting to Firestore: Custom authentication failed.");
+                            }
+                        } else {
+                            try {
+                                await signInAnonymously(auth);
+                            } catch (e) {
+                                console.error("Error signing in anonymously:", e);
+                                showMessageBox("Error connecting to Firestore: Anonymous authentication failed.");
+                            }
+                        }
+                    }
+                });
+
+            } catch (e) {
+                console.error("Failed to initialize Firebase:", e);
+                showMessageBox(`Error: ${e.message}`);
+            }
+        });
+        
+        // --- Microphone and Tuner Logic ---
+        function startTuner() {
+            if (isTunerActive) return;
+
+            isTunerActive = true;
+            tunerBtn.classList.remove('bg-gray-600', 'text-gray-400');
+            tunerBtn.classList.add('bg-red-500', 'text-white');
+            tunerIconOff.classList.add('hidden');
+            tunerIconOn.classList.remove('hidden');
+            chatInput.disabled = true;
+            chatInput.placeholder = 'Listening...';
+
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    analyser = audioContext.createAnalyser();
+                    analyser.fftSize = 2048;
+                    source = audioContext.createMediaStreamSource(stream);
+                    source.connect(analyser);
+
+                    pitchDetectorWorker = new Worker(URL.createObjectURL(new Blob([
+                        `function autoCorrelate(buffer, sampleRate) {
+                            let SIZE = buffer.length;
+                            let bestOffset = -1;
+                            let bestCorrelation = 0;
+                            let rms = 0;
+                            for (let i = 0; i < SIZE; i++) {
+                                let val = buffer[i];
+                                rms += val * val;
+                            }
+                            rms = Math.sqrt(rms / SIZE);
+                            if (rms < 0.01) { return -1; }
+                            
+                            let correlation = new Array(SIZE).fill(0);
+                            for (let i = 0; i < SIZE; i++) {
+                                for (let j = 0; j < SIZE - i; j++) {
+                                    correlation[i] += buffer[j] * buffer[j + i];
+                                }
+                            }
+                            let d = 0;
+                            while (correlation[d] > 0 && d < SIZE) { d++; }
+                            let maxVal = -1;
+                            let maxIdx = -1;
+                            for (let i = d; i < SIZE; i++) {
+                                if (correlation[i] > maxVal) {
+                                    maxVal = correlation[i];
+                                    maxIdx = i;
+                                }
+                            }
+                            return sampleRate / maxIdx;
+                        }
+                        self.onmessage = function(e) {
+                            const { buffer, sampleRate } = e.data;
+                            const pitch = autoCorrelate(buffer, sampleRate);
+                            self.postMessage(pitch);
+                        };`
+                    ], { type: 'application/javascript' })));
+
+                    pitchDetectorWorker.onmessage = (e) => {
+                        const pitch = e.data;
+                        if (pitch > 0) {
+                            chatInput.placeholder = `Pitch: ${pitch.toFixed(2)} Hz`;
+                        } else {
+                            chatInput.placeholder = 'No sound detected';
+                        }
+                    };
+                    
+                    const bufferSize = analyser.fftSize;
+                    const buffer = new Float32Array(bufferSize);
+
+                    const detectPitch = () => {
+                        analyser.getFloatTimeDomainData(buffer);
+                        if (pitchDetectorWorker) {
+                            pitchDetectorWorker.postMessage({ buffer: buffer.slice(), sampleRate: audioContext.sampleRate });
+                        }
+                        animationFrameId = requestAnimationFrame(detectPitch);
+                    };
+                    animationFrameId = requestAnimationFrame(detectPitch);
+                })
+                .catch(err => {
+                    console.error('Error accessing microphone:', err);
+                    isTunerActive = false;
+                    tunerBtn.classList.remove('bg-red-500', 'text-white');
+                    tunerBtn.classList.add('bg-gray-600', 'text-gray-400');
+                    tunerIconOff.classList.remove('hidden');
+                    tunerIconOn.classList.add('hidden');
+                    chatInput.disabled = false;
+                    chatInput.placeholder = 'Type a message...';
+                    if (err.name === 'NotAllowedError' || err.name === 'NotReadableError') {
+                        showMessageBox('Microphone access denied. Please grant permission in your browser settings.');
+                    } else {
+                        showMessageBox('Error accessing microphone. Please try again.');
+                    }
+                });
+        }
+
+        function stopTuner() {
+            isTunerActive = false;
+            tunerBtn.classList.remove('bg-red-500', 'text-white');
+            tunerBtn.classList.add('bg-gray-600', 'text-gray-400');
+            tunerIconOff.classList.remove('hidden');
+            tunerIconOn.classList.add('hidden');
+            chatInput.disabled = false;
+            chatInput.placeholder = 'Type a message...';
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            if (source) {
+                source.mediaStream.getTracks().forEach(track => track.stop());
+                source.disconnect();
+            }
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            if (pitchDetectorWorker) {
+                pitchDetectorWorker.terminate();
+                pitchDetectorWorker = null;
+            }
+        }
+        
+        // --- Message Handling Logic ---
+        async function handleSendMessage(prompt, type) {
+            if (!prompt.trim() || !isAuthReady || isAIGenerating) return;
+            
+            handleCloseCodeSidebar();
+            
+            isAIGenerating = true;
+            chatInput.disabled = true;
+            sendBtn.disabled = true;
+
+            const newUserMessage = {
+                role: 'user',
+                text: prompt,
+                timestamp: serverTimestamp(),
+                type: type,
+            };
+
+            try {
+                await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chats`), newUserMessage);
+            } catch (e) {
+                console.error("Error adding user message to Firestore:", e);
+                showMessageBox("Could not save your message. Please try again.");
+            }
+
+            chatInput.value = '';
+
+            const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+            
+            try {
+                const fetchWithRetry = async (url, options, retries = 3, delay = 1000) => {
+                    try {
+                        const response = await fetch(url, options);
+                        if (!response.ok) {
+                            throw new Error(`API Error: ${response.statusText}`);
+                        }
+                        return response;
+                    } catch (error) {
+                        if (retries > 0) {
+                            await new Promise(res => setTimeout(res, delay));
+                            return fetchWithRetry(url, options, retries - 1, delay * 2);
+                        } else {
+                            throw error;
+                        }
+                    }
+                };
+                
+                const apiKey = "";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+                const payload = {
+                    contents: chatHistory,
+                };
+
+                const response = await fetchWithRetry(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+                
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const generatedText = result.candidates[0].content.parts[0].text;
+                    
+                    const newAIMessage = {
+                        role: 'assistant',
+                        text: generatedText,
+                        timestamp: serverTimestamp(),
+                        type: type,
+                    };
+
+                    try {
+                        await addDoc(collection(db, `artifacts/${appId}/users/${userId}/chats`), newAIMessage);
+                    } catch (e) {
+                        console.error("Error adding AI message:", e);
+                        showMessageBox("Could not save AI response. Please try again.");
+                    }
+                } else {
+                    console.error("Unexpected API response format:", result);
+                    showMessageBox("AI response failed. Please try again.");
+                }
+
+            } catch (e) {
+                console.error("API call error:", e);
+                showMessageBox("Failed to get a response from the AI. Check your network or try again later.");
+            } finally {
+                isAIGenerating = false;
+                chatInput.disabled = false;
+                sendBtn.disabled = false;
+            }
+        }
+
+        // --- Event Listeners ---
+        refineBtn.addEventListener('click', () => {
+            activeMode = 'refine';
+            refineBtn.classList.remove('bg-gray-600', 'text-gray-400');
+            refineBtn.classList.add('bg-indigo-500', 'text-white');
+            explainCodeBtn.classList.remove('bg-indigo-500', 'text-white');
+            explainCodeBtn.classList.add('bg-gray-600', 'text-gray-400');
+        });
+
+        explainCodeBtn.addEventListener('click', () => {
+            activeMode = 'explain';
+            explainCodeBtn.classList.remove('bg-gray-600', 'text-gray-400');
+            explainCodeBtn.classList.add('bg-indigo-500', 'text-white');
+            refineBtn.classList.remove('bg-indigo-500', 'text-white');
+            refineBtn.classList.add('bg-gray-600', 'text-gray-400');
+        });
+
+        tunerBtn.addEventListener('click', () => {
+            if (isTunerActive) {
+                stopTuner();
+            } else {
+                startTuner();
+            }
+        });
+        
+        sendBtn.addEventListener('click', () => {
+            if (activeMode === 'refine') {
+                handleSendMessage(chatInput.value, 'refine');
+            } else {
+                handleSendMessage(chatInput.value, 'explain');
+            }
+        });
+
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                if (activeMode === 'refine') {
+                    handleSendMessage(chatInput.value, 'refine');
+                } else {
+                    handleSendMessage(chatInput.value, 'explain');
+                }
+            }
+        });
+        
+        codeViewBtn.addEventListener('click', () => {
+            codeViewBtn.classList.remove('bg-gray-700', 'text-gray-400');
+            codeViewBtn.classList.add('bg-indigo-500', 'text-white');
+            previewViewBtn.classList.remove('bg-indigo-500', 'text-white');
+            previewViewBtn.classList.add('bg-gray-700', 'text-gray-400');
+            
+            codeContent.classList.remove('hidden');
+            previewContent.classList.add('hidden');
+        });
+        
+        previewViewBtn.addEventListener('click', () => {
+            previewViewBtn.classList.remove('bg-gray-700', 'text-gray-400');
+            previewViewBtn.classList.add('bg-indigo-500', 'text-white');
+            codeViewBtn.classList.remove('bg-indigo-500', 'text-white');
+            codeViewBtn.classList.add('bg-gray-700', 'text-gray-400');
+
+            previewContent.classList.remove('hidden');
+            codeContent.classList.add('hidden');
+        });
+
+        closeSidebarBtn.addEventListener('click', handleCloseCodeSidebar);
+        
+    </script>
+
+</body>
+</html>
